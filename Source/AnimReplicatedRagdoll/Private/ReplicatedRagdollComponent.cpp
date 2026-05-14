@@ -78,7 +78,7 @@ void UReplicatedRagdollComponent::ClearRagdoll()
 	if (!AnimData.ComponentSpaceTransforms.IsEmpty())
 	{
 		AnimData.ComponentSpaceTransforms.Empty();
-		//AnimData.MarkArrayDirty();
+		MARK_PROPERTY_DIRTY_FROM_NAME(UReplicatedRagdollComponent, AnimData, this);
 
 		AnimDataHandle->WriteRagdollData(AnimData);
 	}
@@ -89,6 +89,7 @@ void UReplicatedRagdollComponent::CaptureRagdoll()
 	if (USkeletalMeshComponent* SkeletalMesh = GetSkeletalMesh())
 	{
 		AnimData.CapturePose(SkeletalMesh);
+		MARK_PROPERTY_DIRTY_FROM_NAME(UReplicatedRagdollComponent, AnimData, this);
 		AnimDataHandle->WriteRagdollData(AnimData);
 	}
 }
@@ -172,8 +173,14 @@ FReplicatedRagdollData FRagdollAnimData::GetInterpedRagdollData(float DeltaTime,
 	{
 		FTransform& OutTransform = OutData.ComponentSpaceTransforms.FindOrAdd(Pair.Key, Pair.Value);
 
+		const FTransform* CurrentTransform = CurrentDataCopy.ComponentSpaceTransforms.Find(Pair.Key);
+		if (!CurrentTransform)
+		{
+			continue;
+		}
+
 		OutTransform.SetLocation(FMath::VInterpTo(
-			CurrentDataCopy.ComponentSpaceTransforms[Pair.Key].GetLocation(),
+			CurrentTransform->GetLocation(),
 			DataCopy.ComponentSpaceTransforms[Pair.Key].GetLocation(),
 			DeltaTime,
 			InterpSpeed
@@ -181,7 +188,7 @@ FReplicatedRagdollData FRagdollAnimData::GetInterpedRagdollData(float DeltaTime,
 
 		OutTransform.SetRotation(
 			FMath::RInterpTo(
-				CurrentDataCopy.ComponentSpaceTransforms[Pair.Key].GetRotation().Rotator(),
+				CurrentTransform->GetRotation().Rotator(),
 				DataCopy.ComponentSpaceTransforms[Pair.Key].GetRotation().Rotator(),
 				DeltaTime,
 				InterpSpeed

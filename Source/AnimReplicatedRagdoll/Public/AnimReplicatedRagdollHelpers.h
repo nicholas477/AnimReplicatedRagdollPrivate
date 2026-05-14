@@ -6,8 +6,8 @@
 
 namespace AnimReplicatedRagdollHelpers
 {
-	void QuantizeAndWriteLocation(FBitArchive& Writer, const FVector& Location, EVectorQuantization LocationQuantization);
-	void QuantizeAndWriteRotation(FBitArchive& Writer, const FRotator& Rotation, ERotatorQuantization RotationQuantization);
-	void ReadAndDequantizeLocation(FBitArchive& Reader, FVector& Location, EVectorQuantization LocationQuantization);
-	void ReadAndDequantizeRotation(FBitArchive& Reader, FRotator& Rotation, ERotatorQuantization RotationQuantization);
+	void QuantizeAndWriteLocation(FArchive& Writer, const FVector& Location, EVectorQuantization LocationQuantization);
+	void QuantizeAndWriteRotation(FArchive& Writer, const FRotator& Rotation, ERotatorQuantization RotationQuantization);
+	void ReadAndDequantizeLocation(FArchive& Reader, FVector& Location, EVectorQuantization LocationQuantization);
+	void ReadAndDequantizeRotation(FArchive& Reader, FRotator& Rotation, ERotatorQuantization RotationQuantization);
 }
