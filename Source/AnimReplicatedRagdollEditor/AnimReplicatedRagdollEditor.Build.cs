@@ -13,8 +13,9 @@ public class AnimReplicatedRagdollEditor : ModuleRules
 			{
 				"Core",
 				"AnimGraph",
-                "BlueprintGraph",
+				"BlueprintGraph",
 				"AnimReplicatedRagdoll",
+				"AnimReplicatedRagdollUncooked",
 			}
 		);
 		

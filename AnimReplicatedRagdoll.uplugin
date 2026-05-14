@@ -21,8 +21,13 @@
 			"LoadingPhase": "Default"
 		},
 		{
-			"Name": "AnimReplicatedRagdollEditor",
+			"Name": "AnimReplicatedRagdollUncooked",
 			"Type": "UncookedOnly",
+			"LoadingPhase": "PreDefault"
+		},
+		{
+			"Name": "AnimReplicatedRagdollEditor",
+			"Type": "Editor",
 			"LoadingPhase": "PreDefault"
 		}
 	]
