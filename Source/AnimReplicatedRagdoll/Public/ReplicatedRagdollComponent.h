@@ -136,7 +136,7 @@ public:
 
 	FReplicatedRagdollOptions GetReplicationOptions() const { return ReplicationOptions; };
 protected:
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Ragdoll", ReplicatedUsing=OnRep_AnimData)
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadWrite, Category = "Ragdoll", ReplicatedUsing=OnRep_AnimData)
 	FReplicatedRagdollData AnimData;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Ragdoll")

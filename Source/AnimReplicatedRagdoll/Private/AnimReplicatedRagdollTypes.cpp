@@ -18,13 +18,14 @@ void FReplicatedRagdollData::CapturePose(const USkeletalMeshComponent* SkeletalM
 	const TArray<FTransform> BoneTransforms = SkeletalMesh->GetComponentSpaceTransforms();
 
 	const ENetMode NetMode = SkeletalMesh->GetNetMode();
-	if (bOptimizeCapture && (NetMode == ENetMode::NM_DedicatedServer || NetMode == ENetMode::NM_ListenServer) && (BoneTransforms.Num() == ComponentSpaceTransforms.Num()))
+	if (bOptimizeCapture && (NetMode == ENetMode::NM_DedicatedServer || NetMode == ENetMode::NM_ListenServer))
 	{
 		for (int32 i = 0; i < BoneTransforms.Num(); ++i)
 		{
 			ComponentSpaceTransforms.Add(i, BoneTransforms[i]);
 			//MarkItemDirty(Transform);
 		}
+
 	}
 	else
 	{
@@ -143,13 +144,31 @@ bool ShouldReplicateBone(const USkeletalMeshComponent* SkeletalMesh, int32 BoneI
 		return true;
 	}
 
+	const FName BoneName = SkeletalMesh->GetBoneName(BoneIndex);
+
 	if (Options.BoneFilterType == EReplicatedBoneFilterType::AllowList)
 	{
-		return Options.BoneAllowList.Contains(SkeletalMesh->GetBoneName(BoneIndex));
+		for (const FName& AllowedBoneIndex : Options.BoneAllowList)
+		{
+			if (BoneName == AllowedBoneIndex || SkeletalMesh->BoneIsChildOf(AllowedBoneIndex, BoneName))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 	else
 	{
-		return !Options.BoneDenyList.Contains(SkeletalMesh->GetBoneName(BoneIndex));
+		for (const FName& DeniedBoneIndex : Options.BoneDenyList)
+		{
+			if (BoneName == DeniedBoneIndex || SkeletalMesh->BoneIsChildOf(BoneName, DeniedBoneIndex))
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 }
 

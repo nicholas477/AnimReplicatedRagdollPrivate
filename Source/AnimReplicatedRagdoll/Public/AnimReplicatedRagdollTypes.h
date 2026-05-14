@@ -108,7 +108,8 @@ struct FReplicatedRagdollOptions
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta=(EditCondition="BoneFilterType == EReplicatedBoneFilterType::AllowList"))
 	TSet<FName> BoneAllowList;
 
-	// A list of bones that are never sent to the client. If BoneFilterType is set to DenyList then the bones in this list will not be replicated to the client.
+	// A list of bones that are never sent to the client, if the bone filter type is set to DenyList.
+	// The bone, and also any child bones of that bone, will not be replicated.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta = (EditCondition = "BoneFilterType == EReplicatedBoneFilterType::DenyList"))
 	TSet<FName> BoneDenyList;
 };
