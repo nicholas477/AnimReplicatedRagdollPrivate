@@ -25,6 +25,8 @@ public class AnimReplicatedRagdollEditor : ModuleRules
 				"Engine",
 				"Slate",
 				"SlateCore",
+				"PropertyEditor",
+				"InputCore",
 			}
 		);
 	}

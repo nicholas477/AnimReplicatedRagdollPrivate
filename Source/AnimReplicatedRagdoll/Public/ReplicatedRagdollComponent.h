@@ -45,48 +45,17 @@ struct FRagdollAnimData
 		bEvaluateAnimation = bNewEvaluateAnimation;
 	}
 
-	FReplicatedRagdollData GetInterpedRagdollData(float DeltaTime, float InterpSpeed) const
-	{
-		FReplicatedRagdollData OutData;
-		const FReplicatedRagdollData CurrentDataCopy = ReadCurrentRagdollData();
-		const FReplicatedRagdollData DataCopy = ReadRagdollData();
-
-		if (CurrentDataCopy.ComponentSpaceTransforms.Num() == DataCopy.ComponentSpaceTransforms.Num() && CurrentDataCopy.ComponentSpaceTransforms.Num() > 0)
-		{
-			//OutData.ComponentSpaceTransforms.SetNum(CurrentDataCopy.ComponentSpaceTransforms.Num());
-
-			for (int32 i = 0; i < CurrentDataCopy.ComponentSpaceTransforms.Num(); ++i)
-			{
-				FTransform& OutTransform = OutData.ComponentSpaceTransforms.Add(i, FTransform::Identity);
-				OutTransform.SetLocation(
-					FMath::VInterpTo(
-						CurrentDataCopy.ComponentSpaceTransforms[i].GetLocation(),
-						DataCopy.ComponentSpaceTransforms[i].GetLocation(),
-						DeltaTime,
-						InterpSpeed
-					)
-				);
-
-				OutTransform.SetRotation(
-					FMath::RInterpTo(
-						CurrentDataCopy.ComponentSpaceTransforms[i].GetRotation().Rotator(),
-						DataCopy.ComponentSpaceTransforms[i].GetRotation().Rotator(),
-						DeltaTime,
-						InterpSpeed
-					).Quaternion()
-				);
-
-				OutTransform.SetScale3D(FVector(1.f));
-			}
-		}
-		
-		return OutData;
-	}
+	FReplicatedRagdollData GetInterpedRagdollData(float DeltaTime, float InterpSpeed) const;
 
 protected:
 	mutable FRWLock DataLock;
+
+	// This is what the ragdoll is CURRENTLY at on the client side. This is written in pre-update.
 	FReplicatedRagdollData CurrentData;
+
+	// This is the target data that we are interping towards. This is replicated from the server to the client.
 	FReplicatedRagdollData Data;
+
 	bool bEvaluateAnimation;
 };
 
@@ -111,11 +80,8 @@ public:
 	void ClearRagdoll();
 
 	// Reads the bone transforms from the skeletal mesh and copies them into AnimData.
-	// 
-	// bOptimizeCapture = true does an optimized network capture and only updates 
-	// bone transforms if they are more than 1cm or 1degree off.
 	UFUNCTION(BlueprintCallable, Category = "Ragdoll")
-	void CaptureRagdoll(bool bOptimizeCapture = true);
+	void CaptureRagdoll();
 
 	// Sets the skeletal mesh bone transforms to the bone transforms in AnimData.
 	//
@@ -131,6 +97,9 @@ public:
 	// bone data.
 	UFUNCTION(BlueprintCallable, BlueprintNativeEvent, Category = "Ragdoll")
 	bool ShouldApplyRagdoll();
+
+	UFUNCTION(BlueprintCallable, Category = "Ragdoll")
+	void SimulateNonReplicatedBones() const;
 
 	TSharedPtr<FRagdollAnimData> GetAnimDataHandle() const { return AnimDataHandle; }
 

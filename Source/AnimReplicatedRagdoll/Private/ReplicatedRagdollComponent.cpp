@@ -57,7 +57,7 @@ void UReplicatedRagdollComponent::Serialize(FArchive& Ar)
 {
 	if (Ar.IsSaving() && Ar.ArIsSaveGame)
 	{
-		CaptureRagdoll(false);
+		CaptureRagdoll();
 	}
 
 	Super::Serialize(Ar);
@@ -84,11 +84,11 @@ void UReplicatedRagdollComponent::ClearRagdoll()
 	}
 }
 
-void UReplicatedRagdollComponent::CaptureRagdoll(bool bOptimizeCapture)
+void UReplicatedRagdollComponent::CaptureRagdoll()
 {
 	if (USkeletalMeshComponent* SkeletalMesh = GetSkeletalMesh())
 	{
-		AnimData.CapturePose(SkeletalMesh, bOptimizeCapture);
+		AnimData.CapturePose(SkeletalMesh);
 		AnimDataHandle->WriteRagdollData(AnimData);
 	}
 }
@@ -98,6 +98,27 @@ void UReplicatedRagdollComponent::ApplyRagdoll()
 	if (USkeletalMeshComponent* SkeletalMesh = GetSkeletalMesh())
 	{
 		AnimData.ApplyPose(SkeletalMesh);
+	}
+}
+
+void UReplicatedRagdollComponent::SimulateNonReplicatedBones() const
+{
+	if (USkeletalMeshComponent* SkeletalMesh = GetSkeletalMesh())
+	{
+		if (ReplicationOptions.BoneFilterType == EReplicatedBoneFilterType::AllowList)
+		{
+			for (const FName& Bone : ReplicationOptions.BoneAllowList)
+			{
+				SkeletalMesh->SetAllBodiesBelowSimulatePhysics(Bone, true, false);
+			}
+		}
+		else
+		{
+			for (const FName& Bone : ReplicationOptions.BoneDenyList)
+			{
+				SkeletalMesh->SetAllBodiesBelowSimulatePhysics(Bone, true, true);
+			}
+		}
 	}
 }
 
@@ -135,4 +156,38 @@ void UReplicatedRagdollComponent::OnRep_AnimData()
 		AnimDataHandle = MakeShared<decltype(AnimDataHandle)::ElementType>();
 	}
 	AnimDataHandle->WriteRagdollData(AnimData);
+}
+
+FReplicatedRagdollData FRagdollAnimData::GetInterpedRagdollData(float DeltaTime, float InterpSpeed) const
+{
+	FReplicatedRagdollData OutData;
+
+	// This is what the bones are currently at on the client side. This is what we will interp from
+	const FReplicatedRagdollData CurrentDataCopy = ReadCurrentRagdollData();
+
+	// This is the target data that we are interping towards. This is what we will interp to
+	const FReplicatedRagdollData DataCopy = ReadRagdollData();
+
+	for (const TPair<int32, FTransform>& Pair : DataCopy.ComponentSpaceTransforms)
+	{
+		FTransform& OutTransform = OutData.ComponentSpaceTransforms.FindOrAdd(Pair.Key, Pair.Value);
+
+		OutTransform.SetLocation(FMath::VInterpTo(
+			CurrentDataCopy.ComponentSpaceTransforms[Pair.Key].GetLocation(),
+			DataCopy.ComponentSpaceTransforms[Pair.Key].GetLocation(),
+			DeltaTime,
+			InterpSpeed
+		));
+
+		OutTransform.SetRotation(
+			FMath::RInterpTo(
+				CurrentDataCopy.ComponentSpaceTransforms[Pair.Key].GetRotation().Rotator(),
+				DataCopy.ComponentSpaceTransforms[Pair.Key].GetRotation().Rotator(),
+				DeltaTime,
+				InterpSpeed
+			).Quaternion()
+		);
+	}
+
+	return OutData;
 }

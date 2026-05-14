@@ -3,7 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Net/Serialization/FastArraySerializer.h"
+#include "Engine/ReplicatedState.h"
 #include "AnimReplicatedRagdollTypes.generated.h"
 
 /** Custom INetDeltaBaseState used by Fast Array Serialization */
@@ -43,7 +43,7 @@ struct FReplicatedRagdollData
 	UPROPERTY(NotReplicated, BlueprintReadWrite, VisibleInstanceOnly)
 	TMap<int32, FTransform> ComponentSpaceTransforms;
 
-	void CapturePose(const USkeletalMeshComponent* SkeletalMesh, bool bOptimizeCapture = true);
+	void CapturePose(const USkeletalMeshComponent* SkeletalMesh);
 	void ApplyPose(USkeletalMeshComponent* SkeletalMesh);
 
 	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms);
@@ -52,6 +52,19 @@ struct FReplicatedRagdollData
 	{
 		Ar << ComponentSpaceTransforms;
 		return true;
+	}
+
+	int32 GetMaxBoneIndex() const
+	{
+		int32 MaxIndex = INDEX_NONE;
+		for (const TPair<int32, FTransform>& Pair : ComponentSpaceTransforms)
+		{
+			if (Pair.Key > MaxIndex)
+			{
+				MaxIndex = Pair.Key;
+			}
+		}
+		return MaxIndex;
 	}
 };
 
@@ -76,6 +89,32 @@ enum class EReplicatedBoneFilterType : uint8
 	AllowList,
 	DenyList
 };
+
+USTRUCT(BlueprintType)
+struct FReplicatedRagdollBoneFilter
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FName Bone;
+
+	operator FName() const { return Bone; }
+	operator const FName&() const { return Bone; }
+
+	bool operator==(const FReplicatedRagdollBoneFilter& Other) const { return Bone == Other.Bone; }
+	bool operator!=(const FReplicatedRagdollBoneFilter& Other) const { return Bone != Other.Bone; }
+
+	FReplicatedRagdollBoneFilter& operator=(const FName& Other)
+	{
+		Bone = Other;
+		return *this;
+	}
+};
+
+static uint32 GetTypeHash(const FReplicatedRagdollBoneFilter& BoneFilter)
+{
+	return GetTypeHash(BoneFilter.Bone);
+}
 
 USTRUCT(BlueprintType)
 struct FReplicatedRagdollOptions
@@ -106,10 +145,10 @@ struct FReplicatedRagdollOptions
 
 	// A list of the only bones that are sent to the client. If BoneFilterType is set to AllowList then only the bones in this list will be replicated to the client.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta=(EditCondition="BoneFilterType == EReplicatedBoneFilterType::AllowList"))
-	TSet<FName> BoneAllowList;
+	TSet<FReplicatedRagdollBoneFilter> BoneAllowList;
 
 	// A list of bones that are never sent to the client, if the bone filter type is set to DenyList.
 	// The bone, and also any child bones of that bone, will not be replicated.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta = (EditCondition = "BoneFilterType == EReplicatedBoneFilterType::DenyList"))
-	TSet<FName> BoneDenyList;
+	TSet<FReplicatedRagdollBoneFilter> BoneDenyList;
 };
