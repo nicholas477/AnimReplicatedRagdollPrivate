@@ -74,4 +74,111 @@ namespace AnimReplicatedRagdollHelpers
 			break;
 		}
 	}
+
+	FPIEEditorErrorFlag::FPIEEditorErrorFlag()
+	{
+#if WITH_EDITOR
+		if (!OnPIEExitHandle.IsValid())
+		{
+			OnPIEExitHandle = FEditorDelegates::ShutdownPIE.AddRaw(this, &FPIEEditorErrorFlag::ResetError);
+		}
+#endif
+	}
+
+	FPIEEditorErrorFlag::~FPIEEditorErrorFlag()
+	{
+#if WITH_EDITOR
+		if (OnPIEExitHandle.IsValid())
+		{
+			FEditorDelegates::ShutdownPIE.Remove(OnPIEExitHandle);
+			OnPIEExitHandle.Reset();
+		}
+#endif
+	}
+
+	FPIEEditorErrorFlag::FPIEEditorErrorFlag(const FPIEEditorErrorFlag& Other)
+	{
+		bHasCalledError = Other.bHasCalledError;
+
+#if WITH_EDITOR
+		if (OnPIEExitHandle.IsValid())
+		{
+			FEditorDelegates::ShutdownPIE.Remove(OnPIEExitHandle);
+			OnPIEExitHandle.Reset();
+		}
+
+		if (OnPIEExitHandle.IsValid())
+		{
+			OnPIEExitHandle = FEditorDelegates::ShutdownPIE.AddRaw(this, &FPIEEditorErrorFlag::ResetError);
+		}
+#endif
+	}
+
+	FPIEEditorErrorFlag& FPIEEditorErrorFlag::operator=(const FPIEEditorErrorFlag& Other)
+	{
+		bHasCalledError = Other.bHasCalledError;
+
+#if WITH_EDITOR
+		if (OnPIEExitHandle.IsValid())
+		{
+			FEditorDelegates::ShutdownPIE.Remove(OnPIEExitHandle);
+			OnPIEExitHandle.Reset();
+		}
+
+		if (Other.OnPIEExitHandle.IsValid())
+		{
+			OnPIEExitHandle = FEditorDelegates::ShutdownPIE.AddRaw(this, &FPIEEditorErrorFlag::ResetError);
+		}
+#endif
+
+		return *this;
+	}
+
+	FPIEEditorErrorFlag::FPIEEditorErrorFlag(FPIEEditorErrorFlag&& Other)
+	{
+		bHasCalledError = Other.bHasCalledError;
+
+#if WITH_EDITOR
+		if (OnPIEExitHandle.IsValid())
+		{
+			FEditorDelegates::ShutdownPIE.Remove(OnPIEExitHandle);
+			OnPIEExitHandle.Reset();
+		}
+
+		if (Other.OnPIEExitHandle.IsValid())
+		{
+			OnPIEExitHandle = FEditorDelegates::ShutdownPIE.AddRaw(this, &FPIEEditorErrorFlag::ResetError);
+		}
+#endif
+	}
+
+	FPIEEditorErrorFlag& FPIEEditorErrorFlag::operator=(FPIEEditorErrorFlag&& Other)
+	{
+		bHasCalledError = Other.bHasCalledError;
+
+#if WITH_EDITOR
+		if (OnPIEExitHandle.IsValid())
+		{
+			FEditorDelegates::ShutdownPIE.Remove(OnPIEExitHandle);
+			OnPIEExitHandle.Reset();
+		}
+
+		if (Other.OnPIEExitHandle.IsValid())
+		{
+			OnPIEExitHandle = FEditorDelegates::ShutdownPIE.AddRaw(this, &FPIEEditorErrorFlag::ResetError);
+		}
+#endif
+
+		return *this;
+	}
+
+	FPIEEditorErrorFlag::operator bool() const
+	{
+		return bHasCalledError;
+	}
+
+	void FPIEEditorErrorFlag::ResetError(bool)
+	{
+		bHasCalledError = false;
+	}
 }

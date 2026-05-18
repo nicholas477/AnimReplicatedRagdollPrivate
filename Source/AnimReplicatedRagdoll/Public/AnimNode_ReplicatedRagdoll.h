@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Animation/AnimNodeBase.h"
 #include "ReplicatedRagdollComponent.h"
+#include "AnimReplicatedRagdollHelpers.h"
 #include "AnimNode_ReplicatedRagdoll.generated.h"
 
 /**
@@ -31,6 +32,9 @@ public:
 
 
 #if WITH_EDITOR
+	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag InvalidBoneIndexFlag;
+	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag IsSimulatingPhysicsFlag;
+
 	// Checks to make sure bones that we are interping arent simulated on the client.
 	// Outputs a blueprint error if it is simulating those bones
 	virtual void CheckForSimulatedBones(const UAnimInstance* InAnimInstance) const;

@@ -3,6 +3,7 @@
 
 #include "AnimNode_ReplicatedRagdoll.h"
 
+#include "AnimReplicatedRagdollHelpers.h"
 #include "Animation/AnimInstanceProxy.h"
 
 #if WITH_EDITOR
@@ -13,6 +14,8 @@
 #include "Logging/MessageLog.h"
 #include "Misc/UObjectToken.h"
 #endif
+
+#define LOCTEXT_NAMESPACE "FAnimNode_ReplicatedRagdoll"
 
 void FAnimNode_ReplicatedRagdoll::PreUpdate(const UAnimInstance* InAnimInstance)
 {
@@ -155,26 +158,33 @@ void FAnimNode_ReplicatedRagdoll::CheckForSimulatedBones(const UAnimInstance* In
 	for (const TPair<int32, FTransform>& RagdollTransform : RagdollData.ComponentSpaceTransforms)
 	{
 		const FName BoneName = SkeletalMeshComponent->GetBoneName(RagdollTransform.Key);
-		if (BoneName == NAME_None)
+		if (!InvalidBoneIndexFlag && BoneName == NAME_None)
 		{
-			const FText Text = FText::Format(NSLOCTEXT("AnimNode_ReplicatedRagdoll", "InvalidBoneName", "AnimReplicatedRagdoll:Invalid bone name for bone index {0}"), FText::AsNumber(RagdollTransform.Key));
+			InvalidBoneIndexFlag.SetCalledError();
 
+			const FText Text = FText::Format(LOCTEXT("InvalidBoneName", "AnimReplicatedRagdoll:Invalid bone index {0}. Is the skeleton wrong?"), FText::AsNumber(RagdollTransform.Key));
 			FMessageLog MessageLog("PIE");
 			MessageLog.Error()
-				->AddToken(FTextToken::Create(Text));
+				->AddToken(FTextToken::Create(Text))
+				->AddToken(FUObjectToken::Create(SkeletalMeshComponent->GetOwner()));
 			MessageLog.Open(EMessageSeverity::Error);
 
 			continue;
 		}
 
-		if (SkeletalMeshComponent->IsSimulatingPhysics(BoneName))
+		if (!IsSimulatingPhysicsFlag && SkeletalMeshComponent->IsSimulatingPhysics(BoneName))
 		{
-			const FText Text = FText::Format(NSLOCTEXT("AnimNode_ReplicatedRagdoll", "SimulatedBone", "AnimReplicatedRagdoll: Bone {0} is currently simulating physics on client when it has a replicated ragdoll."), FText::FromName(BoneName));
+			IsSimulatingPhysicsFlag.SetCalledError();
+
+			const FText Text = FText::Format(LOCTEXT("SimulatedBone", "AnimReplicatedRagdoll: Bone {0} is currently simulating physics on client when it has a replicated ragdoll."), FText::FromName(BoneName));
 			FMessageLog MessageLog("PIE");
 			MessageLog.Warning()
-				->AddToken(FTextToken::Create(Text));
+				->AddToken(FTextToken::Create(Text))
+				->AddToken(FUObjectToken::Create(SkeletalMeshComponent->GetOwner()));
 			MessageLog.Open(EMessageSeverity::Warning);
 		};
 	}
 }
 #endif
+
+#undef LOCTEXT_NAMESPACE

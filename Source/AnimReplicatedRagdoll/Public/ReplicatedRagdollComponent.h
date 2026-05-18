@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Components/SceneComponent.h"
 #include "AnimReplicatedRagdollTypes.h"
+#include "AnimReplicatedRagdollHelpers.h"
 #include "ReplicatedRagdollComponent.generated.h"
 
 class UReplicatedRagdollComponent;
@@ -119,4 +120,14 @@ protected:
 
 	UFUNCTION()
 	void OnRep_AnimData();
+
+#if WITH_EDITOR
+	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag AttachParentFlag;
+	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag IsReplicatedFlag;
+	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag AnimInstanceFlag;
+	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag OwnerIsReplicatedFlag;
+	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag TickOptionFlag;
+	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag FoundAnimNodeFlag;
+	virtual void CheckRequirements() const;
+#endif
 };

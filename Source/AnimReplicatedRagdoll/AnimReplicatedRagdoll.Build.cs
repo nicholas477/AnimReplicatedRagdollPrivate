@@ -27,5 +27,13 @@ public class AnimReplicatedRagdoll : ModuleRules
                 "NetCore"
             }
 		);
-	}
+
+        if (Target.Type == TargetType.Editor)
+        {
+            PrivateDependencyModuleNames.AddRange(new string[]
+            {
+                "UnrealEd",
+            });
+        }
+    }
 }
