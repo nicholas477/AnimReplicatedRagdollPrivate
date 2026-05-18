@@ -4,6 +4,7 @@
 
 #include "IPropertyTypeCustomization.h"
 #include "Widgets/Views/STableRow.h"
+#include "AnimReplicatedRagdollTypes.h"
 
 class IDetailLayoutBuilder;
 class IPropertyHandle;
@@ -42,6 +43,9 @@ private:
     TArray<TSharedPtr<FBoneTreeItem>> BoneTree;
     TSharedPtr<STreeView<TSharedPtr<FBoneTreeItem>>> BoneTreeView;
     USkeletalMesh* CachedSkeletalMesh;
+    TSet<FString> FilteredBones;
+    EReplicatedBoneFilterType CurrentFilterType;
+    const USkeleton* CurrentSkeleton;
 
     /** Refresh the bone tree from the skeletal mesh */
     void RefreshBoneTree();
@@ -71,4 +75,16 @@ private:
 
     /** Recursively add bones to tree */
     TSharedPtr<FBoneTreeItem> AddBoneToTree(int32 BoneIndex, const USkeleton* Skeleton, TWeakPtr<FBoneTreeItem> ParentItem);
+
+    /** Refresh the filtered bones set from the parent component */
+    void RefreshFilteredBones();
+
+    /** Check if a bone is filtered (directly or through hierarchy) */
+    bool IsBoneFiltered(const FString& BoneName) const;
+
+    /** Check if BoneA is a descendant of BoneB */
+    bool IsDescendantOf(const FString& BoneA, const FString& BoneB) const;
+
+    /** Check if BoneA is an ancestor of BoneB */
+    bool IsAncestorOf(const FString& BoneA, const FString& BoneB) const;
 };

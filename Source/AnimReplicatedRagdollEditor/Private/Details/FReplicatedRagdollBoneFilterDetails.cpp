@@ -11,6 +11,8 @@
 #include "Widgets/Views/STableRow.h"
 #include "Widgets/Text/STextBlock.h"
 #include "Widgets/Layout/SBox.h"
+#include "AnimReplicatedRagdollTypes.h"
+#include "Containers/Set.h"
 
 #define LOCTEXT_NAMESPACE "FReplicatedRagdollBoneFilterDetails"
 
@@ -23,6 +25,7 @@ void FReplicatedRagdollBoneFilterDetails::CustomizeHeader(TSharedRef<IPropertyHa
 {
     BonePropertyHandle = PropertyHandle;
     CachedSkeletalMesh = nullptr;
+    CurrentSkeleton = nullptr;
     BoneTree.Empty();
 
     // Try to get the skeletal mesh from context
@@ -109,11 +112,18 @@ void FReplicatedRagdollBoneFilterDetails::RefreshBoneTree()
         return;
     }
 
-    // Get skeleton and build tree
-    if (const USkeleton* Skeleton = CachedSkeletalMesh->GetSkeleton())
+    // Get skeleton and store it
+    CurrentSkeleton = CachedSkeletalMesh->GetSkeleton();
+    if (!CurrentSkeleton)
     {
-        BuildBoneTree(Skeleton);
+        return;
     }
+
+    // Refresh the filtered bones set
+    RefreshFilteredBones();
+
+    // Build tree
+    BuildBoneTree(CurrentSkeleton);
 
     if (BoneTreeView.IsValid())
     {
@@ -230,10 +240,15 @@ void FReplicatedRagdollBoneFilterDetails::OnBoneSelected(TSharedPtr<FBoneTreeIte
 
 TSharedRef<ITableRow> FReplicatedRagdollBoneFilterDetails::GenerateBoneRow(TSharedPtr<FBoneTreeItem> BoneItem, const TSharedRef<STableViewBase>& OwnerTable)
 {
+    bool bIsFiltered = IsBoneFiltered(BoneItem->BoneName);
+    FSlateColor TextColor = bIsFiltered ? FSlateColor(FLinearColor(0.5f, 0.5f, 0.5f, 0.5f)) : FSlateColor::UseForeground();
+
     return SNew(STableRow<TSharedPtr<FBoneTreeItem>>, OwnerTable)
         [
             SNew(STextBlock)
             .Text(FText::FromString(BoneItem->BoneName))
+            .ColorAndOpacity(TextColor)
+            .IsEnabled(!bIsFiltered)
         ];
 }
 
@@ -274,6 +289,155 @@ void FReplicatedRagdollBoneFilterDetails::OnBoneNameCommitted(const FText& InTex
             BoneChildHandle->SetValue(FName(*InText.ToString()));
         }
     }
+}
+
+void FReplicatedRagdollBoneFilterDetails::RefreshFilteredBones()
+{
+    FilteredBones.Empty();
+    CurrentFilterType = EReplicatedBoneFilterType::DenyList;
+
+    if (!BonePropertyHandle.IsValid())
+    {
+        return;
+    }
+
+    // Get the outer object to access the component
+    TArray<UObject*> ExternalObjects;
+    BonePropertyHandle->GetOuterObjects(ExternalObjects);
+
+    for (UObject* Obj : ExternalObjects)
+    {
+        if (!Obj) continue;
+
+        // Check if it's a ReplicatedRagdollComponent
+        if (UReplicatedRagdollComponent* RagdollComponent = Cast<UReplicatedRagdollComponent>(Obj))
+        {
+            const FReplicatedRagdollOptions& Options = RagdollComponent->GetReplicationOptions();
+            CurrentFilterType = Options.BoneFilterType;
+
+            if (CurrentFilterType == EReplicatedBoneFilterType::DenyList)
+            {
+                for (const FReplicatedRagdollBoneFilter& Filter : Options.BoneDenyList)
+                {
+                    FilteredBones.Add(Filter.Bone.ToString());
+                }
+            }
+            else
+            {
+                for (const FReplicatedRagdollBoneFilter& Filter : Options.BoneAllowList)
+                {
+                    FilteredBones.Add(Filter.Bone.ToString());
+                }
+            }
+
+            break;
+        }
+    }
+}
+
+bool FReplicatedRagdollBoneFilterDetails::IsBoneFiltered(const FString& BoneName) const
+{
+    // For DenyList: check if current bone is a descendant of any filtered bone
+    if (CurrentFilterType == EReplicatedBoneFilterType::DenyList)
+    {
+        // Directly filtered
+        if (FilteredBones.Contains(BoneName))
+        {
+            return true;
+        }
+
+        for (const FString& FilteredBone : FilteredBones)
+        {
+            if (IsDescendantOf(BoneName, FilteredBone))
+            {
+                return true;
+            }
+        }
+    }
+
+    // For AllowList: check if current bone is an ancestor of any filtered bone
+    if (CurrentFilterType == EReplicatedBoneFilterType::AllowList)
+    {
+        // Directly filtered
+        if (FilteredBones.Contains(BoneName))
+        {
+            return false;
+        }
+
+        for (const FString& FilteredBone : FilteredBones)
+        {
+            if (IsAncestorOf(BoneName, FilteredBone))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+bool FReplicatedRagdollBoneFilterDetails::IsDescendantOf(const FString& BoneA, const FString& BoneB) const
+{
+    if (!CurrentSkeleton)
+    {
+        return false;
+    }
+
+    const FReferenceSkeleton& RefSkeleton = CurrentSkeleton->GetReferenceSkeleton();
+    int32 BoneAIndex = RefSkeleton.FindBoneIndex(FName(*BoneA));
+    int32 BoneBIndex = RefSkeleton.FindBoneIndex(FName(*BoneB));
+
+    if (BoneAIndex == INDEX_NONE || BoneBIndex == INDEX_NONE)
+    {
+        return false;
+    }
+
+    // Walk up the hierarchy from BoneA to see if we find BoneB
+    int32 CurrentIndex = BoneAIndex;
+    while (CurrentIndex != INDEX_NONE)
+    {
+        const FMeshBoneInfo& BoneInfo = RefSkeleton.GetRefBoneInfo()[CurrentIndex];
+        if (BoneInfo.ParentIndex == BoneBIndex)
+        {
+            return true;
+        }
+        CurrentIndex = BoneInfo.ParentIndex;
+    }
+
+    return false;
+}
+
+bool FReplicatedRagdollBoneFilterDetails::IsAncestorOf(const FString& BoneA, const FString& BoneB) const
+{
+    if (!CurrentSkeleton)
+    {
+        return false;
+    }
+
+    const FReferenceSkeleton& RefSkeleton = CurrentSkeleton->GetReferenceSkeleton();
+    int32 BoneAIndex = RefSkeleton.FindBoneIndex(FName(*BoneA));
+    int32 BoneBIndex = RefSkeleton.FindBoneIndex(FName(*BoneB));
+
+    if (BoneAIndex == INDEX_NONE || BoneBIndex == INDEX_NONE)
+    {
+        return false;
+    }
+
+    // Walk up the hierarchy from BoneB to see if we find BoneA
+    int32 CurrentIndex = BoneBIndex;
+    while (CurrentIndex != INDEX_NONE)
+    {
+        const FMeshBoneInfo& BoneInfo = RefSkeleton.GetRefBoneInfo()[CurrentIndex];
+        if (BoneInfo.ParentIndex == BoneAIndex)
+        {
+            return true;
+        }
+        CurrentIndex = BoneInfo.ParentIndex;
+    }
+
+    return false;
 }
 
 #undef LOCTEXT_NAMESPACE
