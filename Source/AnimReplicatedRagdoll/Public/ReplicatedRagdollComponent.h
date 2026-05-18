@@ -7,6 +7,8 @@
 #include "AnimReplicatedRagdollTypes.h"
 #include "ReplicatedRagdollComponent.generated.h"
 
+class UReplicatedRagdollComponent;
+
 struct FRagdollAnimData
 {
 	FReplicatedRagdollData ReadCurrentRagdollData() const
@@ -104,6 +106,7 @@ public:
 	TSharedPtr<FRagdollAnimData> GetAnimDataHandle() const { return AnimDataHandle; }
 
 	FReplicatedRagdollOptions GetReplicationOptions() const { return ReplicationOptions; };
+
 protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ragdoll", ReplicatedUsing=OnRep_AnimData)
 	FReplicatedRagdollData AnimData;

@@ -5,6 +5,15 @@
 
 #include "Animation/AnimInstanceProxy.h"
 
+#if WITH_EDITOR
+#include "UObject/Script.h"
+#include "Blueprint/BlueprintExceptionInfo.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/KismetDebugUtilities.h"
+#include "Logging/MessageLog.h"
+#include "Misc/UObjectToken.h"
+#endif
+
 void FAnimNode_ReplicatedRagdoll::PreUpdate(const UAnimInstance* InAnimInstance)
 {
 	// cache the currently used skeletal mesh's bone names
@@ -21,6 +30,7 @@ void FAnimNode_ReplicatedRagdoll::PreUpdate(const UAnimInstance* InAnimInstance)
 
 					if (AnimDataHandle.IsValid())
 					{
+						// On server, we want to capture the current pose of the ragdoll and write it to the handle
 						if (AnimDataHandle->ReadCurrentRagdollData().ComponentSpaceTransforms.Num() > 0)
 						{
 							FReplicatedRagdollData CurrentData;
@@ -39,6 +49,10 @@ void FAnimNode_ReplicatedRagdoll::PreUpdate(const UAnimInstance* InAnimInstance)
 		}
 
 	}
+
+#if WITH_EDITOR
+	CheckForSimulatedBones(InAnimInstance);
+#endif
 }
 
 void FAnimNode_ReplicatedRagdoll::Initialize_AnyThread(const FAnimationInitializeContext& Context)
@@ -106,3 +120,61 @@ void FAnimNode_ReplicatedRagdoll::Update_AnyThread(const FAnimationUpdateContext
 
 	ComponentPose.Update(Context);
 }
+
+#if WITH_EDITOR
+void FAnimNode_ReplicatedRagdoll::CheckForSimulatedBones(const UAnimInstance* InAnimInstance) const
+{
+	if (!AnimDataHandle.IsValid())
+	{
+		return;
+	}
+
+	if (!AnimDataHandle->ReadEvaluateAnimation())
+	{
+		return;
+	}
+
+	USkeletalMeshComponent* SkeletalMeshComponent = InAnimInstance->GetSkelMeshComponent();
+	if (!SkeletalMeshComponent)
+	{
+		return;
+	}
+
+	if (!SkeletalMeshComponent->IsRegistered())
+	{
+		return;
+	}
+
+	// Don't check for simulated bones on server since the server is the one simulating the physics and writing the data
+	if (!SkeletalMeshComponent->GetOwner() || SkeletalMeshComponent->GetOwner()->HasAuthority())
+	{
+		return;
+	}
+
+	const auto RagdollData = AnimDataHandle->ReadCurrentRagdollData();
+	for (const TPair<int32, FTransform>& RagdollTransform : RagdollData.ComponentSpaceTransforms)
+	{
+		const FName BoneName = SkeletalMeshComponent->GetBoneName(RagdollTransform.Key);
+		if (BoneName == NAME_None)
+		{
+			const FText Text = FText::Format(NSLOCTEXT("AnimNode_ReplicatedRagdoll", "InvalidBoneName", "AnimReplicatedRagdoll:Invalid bone name for bone index {0}"), FText::AsNumber(RagdollTransform.Key));
+
+			FMessageLog MessageLog("PIE");
+			MessageLog.Error()
+				->AddToken(FTextToken::Create(Text));
+			MessageLog.Open(EMessageSeverity::Error);
+
+			continue;
+		}
+
+		if (SkeletalMeshComponent->IsSimulatingPhysics(BoneName))
+		{
+			const FText Text = FText::Format(NSLOCTEXT("AnimNode_ReplicatedRagdoll", "SimulatedBone", "AnimReplicatedRagdoll: Bone {0} is currently simulating physics on client when it has a replicated ragdoll."), FText::FromName(BoneName));
+			FMessageLog MessageLog("PIE");
+			MessageLog.Warning()
+				->AddToken(FTextToken::Create(Text));
+			MessageLog.Open(EMessageSeverity::Warning);
+		};
+	}
+}
+#endif

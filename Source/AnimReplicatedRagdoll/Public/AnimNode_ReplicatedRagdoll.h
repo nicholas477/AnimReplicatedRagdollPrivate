@@ -29,6 +29,13 @@ public:
 	virtual void EvaluateComponentSpace_AnyThread(FComponentSpacePoseContext& Output) override;
 	virtual void Update_AnyThread(const FAnimationUpdateContext& Context) override;
 
+
+#if WITH_EDITOR
+	// Checks to make sure bones that we are interping arent simulated on the client.
+	// Outputs a blueprint error if it is simulating those bones
+	virtual void CheckForSimulatedBones(const UAnimInstance* InAnimInstance) const;
+#endif
+
 protected:
 	TSharedPtr<FRagdollAnimData> AnimDataHandle;
 };
