@@ -61,6 +61,8 @@ private:
     /** Get the currently selected bone name for display */
     FText GetSelectedBoneName() const;
 
+    void OnBoneNameCommitted(const FText& InText, ETextCommit::Type InCommitType);
+
     /** Try to get the skeletal mesh from the property handle's outer object */
     USkeletalMesh* GetSkeletalMeshFromContext();
 

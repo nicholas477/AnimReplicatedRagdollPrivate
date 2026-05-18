@@ -42,8 +42,10 @@ void FReplicatedRagdollBoneFilterDetails::CustomizeHeader(TSharedRef<IPropertyHa
             .OnGetMenuContent(this, &FReplicatedRagdollBoneFilterDetails::GenerateBoneMenuContent)
             .ButtonContent()
             [
-                SNew(STextBlock)
+                SNew(SEditableTextBox)
                 .Text(this, &FReplicatedRagdollBoneFilterDetails::GetSelectedBoneName)
+                .OnTextCommitted(this, &FReplicatedRagdollBoneFilterDetails::OnBoneNameCommitted)
+                .HintText(LOCTEXT("SelectBone", "Select Bone..."))
             ]
         ];
 }
@@ -239,14 +241,14 @@ FText FReplicatedRagdollBoneFilterDetails::GetSelectedBoneName() const
 {
     if (!BonePropertyHandle.IsValid())
     {
-        return LOCTEXT("SelectBone", "Select Bone...");
+        return FText::GetEmpty();
     }
 
     // Get the child handle for the Bone property
     TSharedPtr<IPropertyHandle> BoneChildHandle = BonePropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FReplicatedRagdollBoneFilter, Bone));
     if (!BoneChildHandle.IsValid())
     {
-        return LOCTEXT("SelectBone", "Select Bone...");
+        return FText::GetEmpty();
     }
 
     FName CurrentBone;
@@ -254,12 +256,24 @@ FText FReplicatedRagdollBoneFilterDetails::GetSelectedBoneName() const
     {
         if (CurrentBone.IsNone())
         {
-            return LOCTEXT("SelectBone", "Select Bone...");
+            return FText::GetEmpty();
         }
         return FText::FromName(CurrentBone);
     }
 
-    return LOCTEXT("SelectBone", "Select Bone...");
+    return FText::GetEmpty();
+}
+
+void FReplicatedRagdollBoneFilterDetails::OnBoneNameCommitted(const FText& InText, ETextCommit::Type InCommitType)
+{
+    if (BonePropertyHandle.IsValid())
+    {
+        TSharedPtr<IPropertyHandle> BoneChildHandle = BonePropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FReplicatedRagdollBoneFilter, Bone));
+        if (BoneChildHandle.IsValid())
+        {
+            BoneChildHandle->SetValue(FName(*InText.ToString()));
+        }
+    }
 }
 
 #undef LOCTEXT_NAMESPACE
