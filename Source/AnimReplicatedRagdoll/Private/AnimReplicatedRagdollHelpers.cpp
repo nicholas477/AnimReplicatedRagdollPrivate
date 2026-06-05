@@ -4,6 +4,7 @@
 #include "AnimReplicatedRagdollHelpers.h"
 
 #include "Engine/ReplicatedState.h"
+#include "AnimReplicatedRagdollSettings.h"
 
 namespace AnimReplicatedRagdollHelpers
 {
@@ -75,7 +76,8 @@ namespace AnimReplicatedRagdollHelpers
 		}
 	}
 
-	FPIEEditorErrorFlag::FPIEEditorErrorFlag()
+	FPIEEditorErrorFlag::FPIEEditorErrorFlag(const FName& InSettingFlag)
+		: SettingFlag(InSettingFlag)
 	{
 #if WITH_EDITOR
 		if (!OnPIEExitHandle.IsValid())
@@ -174,11 +176,31 @@ namespace AnimReplicatedRagdollHelpers
 
 	FPIEEditorErrorFlag::operator bool() const
 	{
-		return bHasCalledError;
+		return bHasCalledError && GetErrorFlagEnabled();
 	}
 
 	void FPIEEditorErrorFlag::ResetError(bool)
 	{
 		bHasCalledError = false;
+	}
+
+	bool FPIEEditorErrorFlag::GetErrorFlagEnabled() const
+	{
+		if (SettingFlag.IsNone())
+		{
+			return true;
+		}
+
+		const UAnimReplicatedRagdollSettings* Settings = GetDefault<UAnimReplicatedRagdollSettings>();
+		const FBoolProperty* Property = CastField<FBoolProperty>(Settings->GetClass()->FindPropertyByName(SettingFlag));
+		if (Property == nullptr)
+		{
+			return true;
+		}
+
+		bool bErrorFlagEnabled = false;
+		Property->GetValue_InContainer(Settings, &bErrorFlagEnabled);
+
+		return bErrorFlagEnabled;
 	}
 }

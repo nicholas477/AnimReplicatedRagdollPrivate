@@ -16,6 +16,8 @@ struct ANIMREPLICATEDRAGDOLL_API FAnimNode_ReplicatedRagdoll : public FAnimNode_
 {
 	GENERATED_BODY()
 public:
+	FAnimNode_ReplicatedRagdoll();
+
 	// Input link
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Links)
 	FComponentSpacePoseLink ComponentPose;

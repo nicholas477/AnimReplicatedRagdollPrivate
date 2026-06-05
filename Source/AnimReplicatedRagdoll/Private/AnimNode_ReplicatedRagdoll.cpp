@@ -13,9 +13,18 @@
 #include "Kismet2/KismetDebugUtilities.h"
 #include "Logging/MessageLog.h"
 #include "Misc/UObjectToken.h"
+#include "AnimReplicatedRagdollSettings.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "FAnimNode_ReplicatedRagdoll"
+
+FAnimNode_ReplicatedRagdoll::FAnimNode_ReplicatedRagdoll()
+{
+#if WITH_EDITOR
+	InvalidBoneIndexFlag.SetSettingFlag(GET_MEMBER_NAME_CHECKED(UAnimReplicatedRagdollSettings, bLogInvalidBoneIndexErrors));
+	IsSimulatingPhysicsFlag.SetSettingFlag(GET_MEMBER_NAME_CHECKED(UAnimReplicatedRagdollSettings, bLogSimulatedBoneErrors));
+#endif
+}
 
 void FAnimNode_ReplicatedRagdoll::PreUpdate(const UAnimInstance* InAnimInstance)
 {

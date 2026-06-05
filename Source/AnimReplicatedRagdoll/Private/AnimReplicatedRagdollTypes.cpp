@@ -52,6 +52,7 @@ struct FReplicatedRagdollNetHeader
 	uint8 BoneIndexFormat : 1;
 	uint8 LocationQuantizationLevel : 2;
 	uint8 RotationQuantizationLevel : 2;
+	uint8 bHasSkeletalMeshComponentLocation : 1;
 
 	EVectorQuantization GetLocationQuantization() const
 	{
@@ -276,6 +277,7 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 		Header.BoneIndexFormat = GetMaxBoneIndex() < 256 ? static_cast<uint8>(EBoneIndexFormat::Byte) : static_cast<uint8>(EBoneIndexFormat::Short);
 		Header.LocationQuantizationLevel = static_cast<uint8>(ReplicationOptions.LocationQuantizationLevel);
 		Header.RotationQuantizationLevel = static_cast<uint8>(ReplicationOptions.RotationQuantizationLevel);
+		Header.bHasSkeletalMeshComponentLocation = ReplicationOptions.bReplicateSkeletalMeshComponentLocation;
 
 		GatherBones(FGatherBonesParams{
 			DeltaParms,
@@ -291,6 +293,44 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 	}
 
 	Archive->Serialize(&Header, sizeof(Header));
+
+	if (Header.bHasSkeletalMeshComponentLocation)
+	{
+		check(IsInGameThread());
+
+		if (DeltaParms.Writer)
+		{
+			FTransform SkeletalMeshComponentLocation = FTransform::Identity;
+			if (const UReplicatedRagdollComponent* RagdollComponent = Cast<const UReplicatedRagdollComponent>(DeltaParms.Object))
+			{
+				if (const USkeletalMeshComponent* SkeletalMesh = RagdollComponent->GetSkeletalMesh())
+				{
+					SkeletalMeshComponentLocation = SkeletalMesh->GetComponentTransform();
+				}
+			}
+			AnimReplicatedRagdollHelpers::QuantizeAndWriteLocation(*Archive, SkeletalMeshComponentLocation.GetLocation(), EVectorQuantization::RoundOneDecimal);
+			AnimReplicatedRagdollHelpers::QuantizeAndWriteRotation(*Archive, SkeletalMeshComponentLocation.GetRotation().Rotator(), ERotatorQuantization::ShortComponents);
+		}
+		else
+		{
+			FVector Location;
+			FRotator Rotation;
+			AnimReplicatedRagdollHelpers::ReadAndDequantizeLocation(*Archive, Location, EVectorQuantization::RoundOneDecimal);
+			AnimReplicatedRagdollHelpers::ReadAndDequantizeRotation(*Archive, Rotation, ERotatorQuantization::ShortComponents);
+
+			if (UReplicatedRagdollComponent* RagdollComponent = Cast<UReplicatedRagdollComponent>(DeltaParms.Object))
+			{
+				if (RagdollComponent->ShouldApplyRagdoll())
+				{
+					if (USkeletalMeshComponent* SkeletalMesh = RagdollComponent->GetSkeletalMesh())
+					{
+						SkeletalMesh->SetWorldLocationAndRotation(Location, Rotation);
+					}
+				}
+			}
+		}
+	}
+
 	SerializeBones(BoneLocations, BoneRotations, *Archive, Header);
 
 	if (DeltaParms.Reader)

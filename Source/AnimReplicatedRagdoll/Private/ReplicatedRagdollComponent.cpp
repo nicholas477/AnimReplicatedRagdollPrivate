@@ -14,6 +14,7 @@
 #include "Kismet2/KismetDebugUtilities.h"
 #include "Logging/MessageLog.h"
 #include "Misc/UObjectToken.h"
+#include "AnimReplicatedRagdollSettings.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "ReplicatedRagdollComponent"
@@ -25,6 +26,18 @@ UReplicatedRagdollComponent::UReplicatedRagdollComponent(const FObjectInitialize
 	bWantsInitializeComponent = true;
 
 	SetIsReplicatedByDefault(true);
+
+#if WITH_EDITOR
+	AttachParentFlag.SetSettingFlag(GET_MEMBER_NAME_CHECKED(UAnimReplicatedRagdollSettings, bLogAttachParentErrors));
+
+	IsReplicatedFlag.SetSettingFlag(GET_MEMBER_NAME_CHECKED(UAnimReplicatedRagdollSettings, bLogReplicationErrors));
+	OwnerIsReplicatedFlag.SetSettingFlag(GET_MEMBER_NAME_CHECKED(UAnimReplicatedRagdollSettings, bLogReplicationErrors));
+
+	AnimInstanceFlag.SetSettingFlag(GET_MEMBER_NAME_CHECKED(UAnimReplicatedRagdollSettings, bLogAnimInstanceErrors));
+	FoundAnimNodeFlag.SetSettingFlag(GET_MEMBER_NAME_CHECKED(UAnimReplicatedRagdollSettings, bLogAnimNodeErrors));
+
+	TickOptionFlag.SetSettingFlag(GET_MEMBER_NAME_CHECKED(UAnimReplicatedRagdollSettings, bLogSkeletalMeshTickVisibilityErrors));
+#endif
 }
 
 void UReplicatedRagdollComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)

@@ -15,7 +15,11 @@ namespace AnimReplicatedRagdollHelpers
 	// Makes it so that an error is only thrown once per PIE session.
 	struct FPIEEditorErrorFlag
 	{
-		FPIEEditorErrorFlag();
+		/// <summary>
+		/// 
+		/// </summary>
+		/// <param name="InSettingFlag">The name of the boolean parameter in UAnimReplicatedRagdollSettings that enables this error flag</param>
+		FPIEEditorErrorFlag(const FName& InSettingFlag = NAME_None);
 		~FPIEEditorErrorFlag();
 
 		FPIEEditorErrorFlag(const FPIEEditorErrorFlag&);
@@ -24,15 +28,19 @@ namespace AnimReplicatedRagdollHelpers
 		FPIEEditorErrorFlag(FPIEEditorErrorFlag&&);
 		FPIEEditorErrorFlag& operator=(FPIEEditorErrorFlag&&);
 
+		void SetSettingFlag(const FName& InSettingFlag) { SettingFlag = InSettingFlag; }
+
 		void SetCalledError() {
 			bHasCalledError = true;
 		}
 		operator bool() const;
 
 	protected:
+		FName SettingFlag = NAME_None;
 		bool bHasCalledError = false;
 		mutable FDelegateHandle OnPIEExitHandle;
 
 		void ResetError(bool);
+		bool GetErrorFlagEnabled() const;
 	};
 }
