@@ -52,7 +52,7 @@ struct FReplicatedRagdollNetHeader
 	uint8 BoneIndexFormat : 1;
 	uint8 LocationQuantizationLevel : 2;
 	uint8 RotationQuantizationLevel : 2;
-	uint8 bHasSkeletalMeshComponentLocation : 1;
+	uint8 bRootBoneInWorldSpace : 1;
 
 	EVectorQuantization GetLocationQuantization() const
 	{
@@ -206,15 +206,27 @@ static void GatherBones(const FGatherBonesParams& Params)
 		if (OldState == nullptr 
 			|| OldState->ShouldUpdateBoneLocation(RagdollTransform.Key, RagdollTransform.Value.GetLocation(), LocationQuantization))
 		{
-			Params.BoneLocations.Add(RagdollTransform.Key, RagdollTransform.Value.GetLocation());
-			NewState->UpdateBoneLocation(RagdollTransform.Key, RagdollTransform.Value.GetLocation(), LocationQuantization);
+			FVector Location = RagdollTransform.Value.GetLocation();
+			if (RagdollTransform.Key == 0 && Params.Header.bRootBoneInWorldSpace && Params.SkeletalMesh)
+			{
+				Location = Params.SkeletalMesh->GetComponentTransform().TransformPositionNoScale(Location);
+			}
+
+			Params.BoneLocations.Add(RagdollTransform.Key, Location);
+			NewState->UpdateBoneLocation(RagdollTransform.Key, Location, LocationQuantization);
 		}
 
 		if (OldState == nullptr 
 			|| OldState->ShouldUpdateBoneRotation(RagdollTransform.Key, RagdollTransform.Value.GetRotation().Rotator(), RotationQuantization))
 		{
-			Params.BoneRotations.Add(RagdollTransform.Key, RagdollTransform.Value.GetRotation());
-			NewState->UpdateBoneRotation(RagdollTransform.Key, RagdollTransform.Value.GetRotation().Rotator(), RotationQuantization);
+			FRotator Rotation = RagdollTransform.Value.GetRotation().Rotator();
+			if (RagdollTransform.Key == 0 && Params.Header.bRootBoneInWorldSpace && Params.SkeletalMesh)
+			{
+				Rotation = Params.SkeletalMesh->GetComponentTransform().TransformRotation(Rotation.Quaternion()).Rotator();
+			}
+
+			Params.BoneRotations.Add(RagdollTransform.Key, Rotation.Quaternion());
+			NewState->UpdateBoneRotation(RagdollTransform.Key, Rotation, RotationQuantization);
 		}
 	}
 }
@@ -265,19 +277,23 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 	TMap<uint32, FVector> BoneLocations;
 	TMap<uint32, FQuat> BoneRotations;
 
+	const USkeletalMeshComponent* SkeletalMesh = nullptr;
+	if (const UReplicatedRagdollComponent* RagdollComponent = Cast<const UReplicatedRagdollComponent>(DeltaParms.Object))
+	{
+		SkeletalMesh = RagdollComponent->GetSkeletalMesh();
+	}
+
 	if (DeltaParms.Writer)
 	{
-		const USkeletalMeshComponent* SkeletalMesh = nullptr;
 		FReplicatedRagdollOptions ReplicationOptions;
 		if (const UReplicatedRagdollComponent* RagdollComponent = Cast<const UReplicatedRagdollComponent>(DeltaParms.Object))
 		{
 			ReplicationOptions = RagdollComponent->GetReplicationOptions();
-			SkeletalMesh = RagdollComponent->GetSkeletalMesh();
 		}
 		Header.BoneIndexFormat = GetMaxBoneIndex() < 256 ? static_cast<uint8>(EBoneIndexFormat::Byte) : static_cast<uint8>(EBoneIndexFormat::Short);
 		Header.LocationQuantizationLevel = static_cast<uint8>(ReplicationOptions.LocationQuantizationLevel);
 		Header.RotationQuantizationLevel = static_cast<uint8>(ReplicationOptions.RotationQuantizationLevel);
-		Header.bHasSkeletalMeshComponentLocation = ReplicationOptions.bReplicateSkeletalMeshComponentLocation;
+		Header.bRootBoneInWorldSpace = ReplicationOptions.bRootBoneInWorldSpace;
 
 		GatherBones(FGatherBonesParams{
 			DeltaParms,
@@ -294,57 +310,32 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 
 	Archive->Serialize(&Header, sizeof(Header));
 
-	if (Header.bHasSkeletalMeshComponentLocation)
-	{
-		check(IsInGameThread());
-
-		if (DeltaParms.Writer)
-		{
-			FTransform SkeletalMeshComponentLocation = FTransform::Identity;
-			if (const UReplicatedRagdollComponent* RagdollComponent = Cast<const UReplicatedRagdollComponent>(DeltaParms.Object))
-			{
-				if (const USkeletalMeshComponent* SkeletalMesh = RagdollComponent->GetSkeletalMesh())
-				{
-					SkeletalMeshComponentLocation = SkeletalMesh->GetComponentTransform();
-				}
-			}
-			AnimReplicatedRagdollHelpers::QuantizeAndWriteLocation(*Archive, SkeletalMeshComponentLocation.GetLocation(), EVectorQuantization::RoundOneDecimal);
-			AnimReplicatedRagdollHelpers::QuantizeAndWriteRotation(*Archive, SkeletalMeshComponentLocation.GetRotation().Rotator(), ERotatorQuantization::ShortComponents);
-		}
-		else
-		{
-			FVector Location;
-			FRotator Rotation;
-			AnimReplicatedRagdollHelpers::ReadAndDequantizeLocation(*Archive, Location, EVectorQuantization::RoundOneDecimal);
-			AnimReplicatedRagdollHelpers::ReadAndDequantizeRotation(*Archive, Rotation, ERotatorQuantization::ShortComponents);
-
-			if (UReplicatedRagdollComponent* RagdollComponent = Cast<UReplicatedRagdollComponent>(DeltaParms.Object))
-			{
-				if (RagdollComponent->ShouldApplyRagdoll())
-				{
-					if (USkeletalMeshComponent* SkeletalMesh = RagdollComponent->GetSkeletalMesh())
-					{
-						SkeletalMesh->SetWorldLocationAndRotation(Location, Rotation);
-					}
-				}
-			}
-		}
-	}
-
 	SerializeBones(BoneLocations, BoneRotations, *Archive, Header);
 
 	if (DeltaParms.Reader)
 	{
 		for (const TPair<uint32, FVector>& BoneLocation : BoneLocations)
 		{
+			FVector Location = BoneLocation.Value;
+			if (BoneLocation.Key == 0 && Header.bRootBoneInWorldSpace && SkeletalMesh)
+			{
+				Location = SkeletalMesh->GetComponentTransform().InverseTransformPositionNoScale(Location);
+			}
+
 			FTransform& Transform = ComponentSpaceTransforms.FindOrAdd(BoneLocation.Key);
-			Transform.SetLocation(BoneLocation.Value);
+			Transform.SetLocation(Location);
 		}
 
 		for (const TPair<uint32, FQuat>& BoneRotation : BoneRotations)
 		{
+			FRotator Rotation = BoneRotation.Value.Rotator();
+			if (BoneRotation.Key == 0 && Header.bRootBoneInWorldSpace && SkeletalMesh)
+			{
+				Rotation = SkeletalMesh->GetComponentTransform().InverseTransformRotation(Rotation.Quaternion()).Rotator();
+			}
+
 			FTransform& Transform = ComponentSpaceTransforms.FindOrAdd(BoneRotation.Key);
-			Transform.SetRotation(BoneRotation.Value);
+			Transform.SetRotation(Rotation.Quaternion());
 		}
 	}
 

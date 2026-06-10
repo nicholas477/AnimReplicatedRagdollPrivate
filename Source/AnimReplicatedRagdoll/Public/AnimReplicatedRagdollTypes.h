@@ -115,9 +115,6 @@ struct FReplicatedRagdollOptions
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta = (EditCondition = "BoneFilterType == EReplicatedBoneFilterType::DenyList"))
 	TSet<FReplicatedRagdollBoneFilter> BoneDenyList;
 
-	// Replicate the location/rotation of the skeletal mesh.
-	// The bone transforms are replicated in component space, so they depend on the skeletal mesh component being at the right location.
-	// If you are having issues with bones being out of place, turn this on.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
-	bool bReplicateSkeletalMeshComponentLocation = false;
+	bool bRootBoneInWorldSpace = true;
 };
