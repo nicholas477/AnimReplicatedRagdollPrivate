@@ -118,6 +118,9 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 				BoneTransforms.Add(BoneTransform);
 			}
 
+			// The thing doesn't like non-sorted bones
+			BoneTransforms.Sort([](const FBoneTransform A, const FBoneTransform B) { return A.BoneIndex < B.BoneIndex; });
+
 			Output.Pose.LocalBlendCSBoneTransforms(BoneTransforms, 1.0f);
 		}
 	}

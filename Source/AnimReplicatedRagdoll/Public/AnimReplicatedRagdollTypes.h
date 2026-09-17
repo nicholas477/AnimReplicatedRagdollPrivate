@@ -57,8 +57,8 @@ template<> struct TStructOpsTypeTraits<FReplicatedRagdollData> : public TStructO
 UENUM(BlueprintType)
 enum class EReplicatedBoneFilterType : uint8
 {
-	AllowList,
-	DenyList
+	AllowList UMETA(ToolTip = "ONLY allow the bones in this list to replicate to clients"),
+	DenyList UMETA(ToolTip = "Replicate all bones EXCEPT the ones in this list")
 };
 
 USTRUCT(BlueprintType)
@@ -115,6 +115,7 @@ struct FReplicatedRagdollOptions
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta = (EditCondition = "BoneFilterType == EReplicatedBoneFilterType::DenyList"))
 	TSet<FReplicatedRagdollBoneFilter> BoneDenyList;
 
+	// If true, then the bones will be sent to the client in world space rather than component space
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
-	bool bRootBoneInWorldSpace = true;
+	bool bReplicateBonesInWorldSpace = true;
 };

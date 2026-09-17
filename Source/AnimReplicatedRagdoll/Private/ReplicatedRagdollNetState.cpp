@@ -96,6 +96,14 @@ void FReplicatedRagdollNetState::UpdateBoneRotation(int32 BoneIndex, const FRota
 	NewBoneData.LastRotation = QuantizeRotation(NewRotaton, QuantizationLevel);
 }
 
+void FReplicatedRagdollNetState::RemoveBones(const TArray<uint32>& BoneIndices)
+{
+	for (uint32 BoneIndex : BoneIndices)
+	{
+		BoneData.Remove(BoneIndex);
+	}
+}
+
 bool FReplicatedRagdollNetState::IsStateEqual(INetDeltaBaseState* Other)
 {
 	FReplicatedRagdollNetState* OtherState = static_cast<FReplicatedRagdollNetState*>(Other);

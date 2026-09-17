@@ -100,7 +100,7 @@ void UReplicatedRagdollComponent::Serialize(FArchive& Ar)
 USkeletalMeshComponent* UReplicatedRagdollComponent::GetSkeletalMesh() const
 {
 #if WITH_EDITOR
-	if (!AttachParentFlag)
+	if (!AttachParentFlag && !HasAnyFlags(RF_ArchetypeObject))
 	{
 		if (!GetAttachParent() || !GetAttachParent()->IsA<USkeletalMeshComponent>())
 		{

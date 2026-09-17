@@ -22,9 +22,10 @@ public:
 	void UpdateBoneLocation(int32 BoneIndex, const FVector& NewLocation, EVectorQuantization QuantizationLevel);
 	void UpdateBoneRotation(int32 BoneIndex, const FRotator& NewRotaton, ERotatorQuantization QuantizationLevel);
 
+	void RemoveBones(const TArray<uint32>& BoneIndices);
+
 	virtual bool IsStateEqual(INetDeltaBaseState* Other) override;
 
-protected:
 	struct FReplicatedBoneData
 	{
 		bool bHasLocationData = false;
@@ -41,5 +42,10 @@ protected:
 		}
 	};
 
+	const TMap<int32, FReplicatedBoneData>& GetBoneData() const
+	{
+		return BoneData;
+	}
+protected:
 	TMap<int32, FReplicatedBoneData> BoneData;
 };
