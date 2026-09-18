@@ -4,7 +4,7 @@
 
 #include "Modules/ModuleManager.h"
 
-class FAnimReplicatedRagdollModule : public IModuleInterface
+class ANIMREPLICATEDRAGDOLL_API FAnimReplicatedRagdollModule : public IModuleInterface
 {
 public:
 

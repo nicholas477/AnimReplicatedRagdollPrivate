@@ -6,8 +6,11 @@
 #include "Engine/ReplicatedState.h"
 #include "AnimReplicatedRagdollTypes.generated.h"
 
+class UReplicatedRagdollComponent;
+struct FReplicatedRagdollNetHeader;
+
 USTRUCT(BlueprintType)
-struct FReplicatedRagdollData
+struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollData
 {
 	GENERATED_BODY()
 
@@ -18,6 +21,7 @@ struct FReplicatedRagdollData
 	void ApplyPose(USkeletalMeshComponent* SkeletalMesh);
 
 	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms);
+	bool NetDeltaSerialize(UReplicatedRagdollComponent* RagdollComponent, INetDeltaBaseState* OldState, TSharedPtr<INetDeltaBaseState>* NewState, TArray<uint8>& OutData) const;
 
 	bool Serialize(FArchive& Ar)
 	{
@@ -37,6 +41,35 @@ struct FReplicatedRagdollData
 		}
 		return MaxIndex;
 	}
+
+	struct FGatherBonesParams
+	{
+		/** Pointer to the previous base state. Used when writing. */
+		INetDeltaBaseState* OldState = nullptr;
+
+		/** SharedPtr to new base state created by NetDeltaSerialize. Used when writing.*/
+		TSharedPtr<INetDeltaBaseState>* NewState = nullptr;
+
+		const FTransform SkeletalMeshTransform;
+		const TMap<int32, FTransform>& ComponentSpaceTransforms;
+		TMap<uint32, FVector>& BoneLocations;
+		TMap<uint32, FQuat>& BoneRotations;
+		TArray<uint32>& DeletedBones;
+		const FReplicatedRagdollNetHeader& Header;
+		const TArray<int32>& AllowedBones;
+		const FReplicatedRagdollOptions& ReplicationOptions;
+	};
+
+	static void GatherBones(const FGatherBonesParams& Params);
+	static void SerializeBones(TMap<uint32, FVector>& Locations, TMap<uint32, FQuat>& Rotations, TArray<uint32>& DeletedBones, FArchive& Archive, FReplicatedRagdollNetHeader& Header);
+};
+
+// The size of the unsigned integer for bone indicies.
+// // This is used to save bandwidth when replicating bone transforms by using a smaller integer type for the bone index when possible.
+enum class EBoneIndexFormat : uint8
+{
+	Byte,
+	Short
 };
 
 static FArchive& operator<<(FArchive& Ar, FReplicatedRagdollData& Value)
@@ -62,7 +95,7 @@ enum class EReplicatedBoneFilterType : uint8
 };
 
 USTRUCT(BlueprintType)
-struct FReplicatedRagdollBoneFilter
+struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollBoneFilter
 {
 	GENERATED_BODY()
 
@@ -88,7 +121,7 @@ static uint32 GetTypeHash(const FReplicatedRagdollBoneFilter& BoneFilter)
 }
 
 USTRUCT(BlueprintType)
-struct FReplicatedRagdollOptions
+struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollOptions
 {
 	GENERATED_BODY()
 
@@ -118,4 +151,38 @@ struct FReplicatedRagdollOptions
 	// If true, then the bones will be sent to the client in world space rather than component space
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	bool bReplicateBonesInWorldSpace = true;
+
+	bool ShouldReplicateBone(const USkeletalMeshComponent* SkeletalMesh, int32 BoneIndex) const;
+	TArray<int32> GetBonesToReplicate(const USkeletalMeshComponent* SkeletalMesh) const;
+};
+
+struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollNetHeader
+{
+	uint8 BoneIndexFormat : 1;
+	uint8 LocationQuantizationLevel : 2;
+	uint8 RotationQuantizationLevel : 2;
+	uint8 bBonesInWorldSpace : 1;
+
+	EVectorQuantization GetLocationQuantization() const
+	{
+		return static_cast<EVectorQuantization>(LocationQuantizationLevel);
+	}
+
+	ERotatorQuantization GetRotationQuantization() const
+	{
+		return static_cast<ERotatorQuantization>(RotationQuantizationLevel);
+	}
+
+	uint32 GetBoneIndexFormatSize() const
+	{
+		switch (BoneIndexFormat)
+		{
+		case static_cast<uint8>(EBoneIndexFormat::Byte):
+			return sizeof(uint8);
+		case static_cast<uint8>(EBoneIndexFormat::Short):
+			return sizeof(uint16);
+		default:
+			return 0;
+		}
+	}
 };

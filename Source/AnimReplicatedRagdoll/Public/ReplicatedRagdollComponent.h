@@ -9,8 +9,9 @@
 #include "ReplicatedRagdollComponent.generated.h"
 
 class UReplicatedRagdollComponent;
+class FReplicatedRagdollNetState;
 
-struct FRagdollAnimData
+struct ANIMREPLICATEDRAGDOLL_API FRagdollAnimData
 {
 	FReplicatedRagdollData ReadCurrentRagdollData() const
 	{
@@ -108,6 +109,16 @@ public:
 
 	FReplicatedRagdollOptions GetReplicationOptions() const { return ReplicationOptions; };
 
+
+	struct FSerializedAnimData
+	{
+		mutable TSharedPtr<FReplicatedRagdollNetState> OldNetState;
+		TSharedPtr<FReplicatedRagdollNetState> NewNetState;
+		mutable TArray<uint8> SerializedData;
+		mutable int64 NumBitsWritten;
+	};
+	const FSerializedAnimData* GetSerializedAnimData(const UNetConnection* Connection) const;
+
 protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ragdoll", ReplicatedUsing=OnRep_AnimData)
 	FReplicatedRagdollData AnimData;
@@ -130,4 +141,7 @@ protected:
 	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag FoundAnimNodeFlag;
 	virtual void CheckRequirements() const;
 #endif
+
+	void KickoffAnimDataSerialization();
+	TMap<UNetConnection*, FSerializedAnimData> SerializedAnimData;
 };
