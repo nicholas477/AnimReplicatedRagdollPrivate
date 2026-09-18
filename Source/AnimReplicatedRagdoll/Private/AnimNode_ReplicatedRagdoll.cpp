@@ -92,8 +92,6 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 	Super::EvaluateComponentSpace_AnyThread(Output);
 	ComponentPose.EvaluateComponentSpace(Output);
 
-	const int32 NumBones = Output.Pose.GetPose().GetNumBones();
-
 	if (AnimDataHandle.IsValid())
 	{
 		if (!AnimDataHandle->ReadEvaluateAnimation())
@@ -101,15 +99,15 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 			return;
 		}
 
-		const auto CurrentRagdollData = AnimDataHandle->ReadCurrentRagdollData();
-		if (CurrentRagdollData.ComponentSpaceTransforms.Num() != NumBones)
-		{
-			UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Mismatch in number of bones between replicated ragdoll and pose"));
-			const FString SkeletalMeshName = (CurrentRagdollData.Mesh ? *CurrentRagdollData.Mesh->GetName() : TEXT("NULL"));
-			UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Replicated Ragdoll skeleton: %s, bones: %d"), *SkeletalMeshName, CurrentRagdollData.ComponentSpaceTransforms.Num());
-			UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Pose skeleton: %s, bones: %d"), *Output.AnimInstanceProxy->GetSkelMeshComponent()->GetSkeletalMeshAsset()->GetName(), NumBones);
-			return;
-		}
+		//const auto CurrentRagdollData = AnimDataHandle->ReadCurrentRagdollData();
+		//if (CurrentRagdollData.ComponentSpaceTransforms.Num() != NumBones)
+		//{
+		//	UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Mismatch in number of bones between replicated ragdoll and pose"));
+		//	const FString SkeletalMeshName = (CurrentRagdollData.Mesh ? *CurrentRagdollData.Mesh->GetName() : TEXT("NULL"));
+		//	UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Replicated Ragdoll skeleton: %s, bones: %d"), *SkeletalMeshName, CurrentRagdollData.ComponentSpaceTransforms.Num());
+		//	UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Pose skeleton: %s, bones: %d"), *Output.AnimInstanceProxy->GetSkelMeshComponent()->GetSkeletalMeshAsset()->GetName(), NumBones);
+		//	return;
+		//}
 
 		FReplicatedRagdollData Transforms = AnimDataHandle->GetInterpedRagdollData(Output.AnimInstanceProxy->GetDeltaSeconds(), InterpSpeed);
 		if (Transforms.ComponentSpaceTransforms.Num() == 0)
@@ -133,6 +131,22 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 
 			// The thing doesn't like non-sorted bones
 			BoneTransforms.Sort([](const FBoneTransform A, const FBoneTransform B) { return A.BoneIndex < B.BoneIndex; });
+
+			const auto& Pose = Output.Pose.GetPose();
+			for (const FBoneTransform& Transform : BoneTransforms)
+			{
+				if (!Pose.IsValidIndex(Transform.BoneIndex))
+				{
+					const auto CurrentRagdollData = AnimDataHandle->ReadCurrentRagdollData();
+					UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Mismatch in bones indicies between replicated ragdoll and pose"));
+					const FString SkeletalMeshName = (CurrentRagdollData.Mesh ? *CurrentRagdollData.Mesh->GetName() : TEXT("NULL"));
+					UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Replicated Ragdoll skeleton: %s, bones: %d"), *SkeletalMeshName, CurrentRagdollData.ComponentSpaceTransforms.Num());
+
+					UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Pose skeleton: %s, bones: %d"), *Output.AnimInstanceProxy->GetSkelMeshComponent()->GetSkeletalMeshAsset()->GetName(), Pose.GetNumBones());
+
+					return;
+				}
+			}
 
 			Output.Pose.LocalBlendCSBoneTransforms(BoneTransforms, 1.0f);
 		}
