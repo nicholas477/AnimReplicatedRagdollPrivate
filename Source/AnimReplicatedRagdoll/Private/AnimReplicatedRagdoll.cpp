@@ -2,6 +2,8 @@
 
 #include "AnimReplicatedRagdoll.h"
 
+DEFINE_LOG_CATEGORY(LogAnimReplicatedRagdoll);
+
 #define LOCTEXT_NAMESPACE "FAnimReplicatedRagdollModule"
 
 void FAnimReplicatedRagdollModule::StartupModule()

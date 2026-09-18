@@ -22,6 +22,8 @@ void FReplicatedRagdollData::CapturePose(const USkeletalMeshComponent* SkeletalM
 	{
 		ComponentSpaceTransforms.Add(i, BoneTransforms[i]);
 	}
+	
+	Mesh = SkeletalMesh->GetSkeletalMeshAsset();
 
 	ReplicationKey++;
 }

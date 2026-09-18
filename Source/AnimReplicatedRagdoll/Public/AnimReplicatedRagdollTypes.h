@@ -20,6 +20,10 @@ struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollData
 	UPROPERTY(NotReplicated, Transient)
 	int64 ReplicationKey = 0;
 
+	// Captured mesh, for debugging purposes
+	UPROPERTY(NotReplicated, Transient)
+	USkeletalMesh* Mesh;
+
 	void CapturePose(const USkeletalMeshComponent* SkeletalMesh);
 	void ApplyPose(USkeletalMeshComponent* SkeletalMesh);
 

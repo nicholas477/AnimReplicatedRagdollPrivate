@@ -4,6 +4,8 @@
 
 #include "Modules/ModuleManager.h"
 
+DECLARE_LOG_CATEGORY_EXTERN(LogAnimReplicatedRagdoll, Log, All);
+
 class ANIMREPLICATEDRAGDOLL_API FAnimReplicatedRagdollModule : public IModuleInterface
 {
 public:

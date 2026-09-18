@@ -3,6 +3,7 @@
 
 #include "AnimNode_ReplicatedRagdoll.h"
 
+#include "AnimReplicatedRagdoll.h"
 #include "AnimReplicatedRagdollHelpers.h"
 #include "Animation/AnimInstanceProxy.h"
 
@@ -91,10 +92,22 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 	Super::EvaluateComponentSpace_AnyThread(Output);
 	ComponentPose.EvaluateComponentSpace(Output);
 
+	const int32 NumBones = Output.Pose.GetPose().GetNumBones();
+
 	if (AnimDataHandle.IsValid())
 	{
-		if (!AnimDataHandle->ReadEvaluateAnimation() || AnimDataHandle->ReadRagdollData().ComponentSpaceTransforms.Num() == 0)
+		if (!AnimDataHandle->ReadEvaluateAnimation())
 		{
+			return;
+		}
+
+		const auto CurrentRagdollData = AnimDataHandle->ReadCurrentRagdollData();
+		if (CurrentRagdollData.ComponentSpaceTransforms.Num() != NumBones)
+		{
+			UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Mismatch in number of bones between replicated ragdoll and pose"));
+			const FString SkeletalMeshName = (CurrentRagdollData.Mesh ? *CurrentRagdollData.Mesh->GetName() : TEXT("NULL"));
+			UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Replicated Ragdoll skeleton: %s, bones: %d"), *SkeletalMeshName, CurrentRagdollData.ComponentSpaceTransforms.Num());
+			UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Pose skeleton: %s, bones: %d"), *Output.AnimInstanceProxy->GetSkelMeshComponent()->GetSkeletalMeshAsset()->GetName(), NumBones);
 			return;
 		}
 

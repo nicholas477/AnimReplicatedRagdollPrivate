@@ -301,18 +301,19 @@ FReplicatedRagdollData FRagdollAnimData::GetInterpedRagdollData(float DeltaTime,
 	// This is the target data that we are interping towards. This is what we will interp to
 	const FReplicatedRagdollData DataCopy = ReadRagdollData();
 
-	for (const TPair<int32, FTransform>& Pair : DataCopy.ComponentSpaceTransforms)
+	for (const TPair<int32, FTransform>& Pair : CurrentDataCopy.ComponentSpaceTransforms)
 	{
 		FTransform& OutTransform = OutData.ComponentSpaceTransforms.FindOrAdd(Pair.Key, Pair.Value);
 
-		const FTransform* CurrentTransform = CurrentDataCopy.ComponentSpaceTransforms.Find(Pair.Key);
-		if (!CurrentTransform)
+		const FTransform* TargetTransform = DataCopy.ComponentSpaceTransforms.Find(Pair.Key);
+		if (!TargetTransform)
 		{
+			OutTransform = Pair.Value;
 			continue;
 		}
 
 		OutTransform.SetLocation(FMath::VInterpTo(
-			CurrentTransform->GetLocation(),
+			Pair.Value.GetLocation(),
 			DataCopy.ComponentSpaceTransforms[Pair.Key].GetLocation(),
 			DeltaTime,
 			InterpSpeed
@@ -320,7 +321,7 @@ FReplicatedRagdollData FRagdollAnimData::GetInterpedRagdollData(float DeltaTime,
 
 		OutTransform.SetRotation(
 			FMath::RInterpTo(
-				CurrentTransform->GetRotation().Rotator(),
+				Pair.Value.GetRotation().Rotator(),
 				DataCopy.ComponentSpaceTransforms[Pair.Key].GetRotation().Rotator(),
 				DeltaTime,
 				InterpSpeed
