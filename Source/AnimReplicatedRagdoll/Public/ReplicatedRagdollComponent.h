@@ -9,8 +9,9 @@
 #include "ReplicatedRagdollComponent.generated.h"
 
 class UReplicatedRagdollComponent;
+class FReplicatedRagdollNetState;
 
-struct FRagdollAnimData
+struct ANIMREPLICATEDRAGDOLL_API FRagdollAnimData
 {
 	FReplicatedRagdollData ReadCurrentRagdollData() const
 	{
@@ -108,6 +109,20 @@ public:
 
 	FReplicatedRagdollOptions GetReplicationOptions() const { return ReplicationOptions; };
 
+
+	struct FSerializedAnimData
+	{
+		TSharedPtr<FReplicatedRagdollNetState> NewNetState;
+		TSharedPtr<TArray<uint8>> SerializedData;
+		int64 NumBitsWritten;
+		int64 ReplicationKey = -1;
+	};
+	bool GetSerializedAnimData(const UNetConnection* Connection, FSerializedAnimData& OutAnimData) const;
+	void UpdateNetState(const UNetConnection* Connection, TSharedPtr<FReplicatedRagdollNetState> NewState) const
+	{
+		NetState.Add(Connection, NewState);
+	}
+
 protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ragdoll", ReplicatedUsing=OnRep_AnimData)
 	FReplicatedRagdollData AnimData;
@@ -130,4 +145,14 @@ protected:
 	mutable AnimReplicatedRagdollHelpers::FPIEEditorErrorFlag FoundAnimNodeFlag;
 	virtual void CheckRequirements() const;
 #endif
+
+	void KickoffAnimDataSerialization();
+	mutable TMap<const UNetConnection*, TSharedPtr<FReplicatedRagdollNetState>> NetState;
+
+	struct FSerializedAnimDataMap
+	{
+		mutable FRWLock Lock;
+		TMap<const UNetConnection*, FSerializedAnimData> Map;
+	};
+	TSharedPtr<FSerializedAnimDataMap> SerializedAnimData;
 };
