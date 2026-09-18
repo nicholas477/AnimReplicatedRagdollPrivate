@@ -19,6 +19,8 @@
 
 #define LOCTEXT_NAMESPACE "FAnimNode_ReplicatedRagdoll"
 
+UE_DISABLE_OPTIMIZATION
+
 FAnimNode_ReplicatedRagdoll::FAnimNode_ReplicatedRagdoll()
 {
 #if WITH_EDITOR
@@ -99,22 +101,14 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 			return;
 		}
 
-		//const auto CurrentRagdollData = AnimDataHandle->ReadCurrentRagdollData();
-		//if (CurrentRagdollData.ComponentSpaceTransforms.Num() != NumBones)
-		//{
-		//	UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Mismatch in number of bones between replicated ragdoll and pose"));
-		//	const FString SkeletalMeshName = (CurrentRagdollData.Mesh ? *CurrentRagdollData.Mesh->GetName() : TEXT("NULL"));
-		//	UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Replicated Ragdoll skeleton: %s, bones: %d"), *SkeletalMeshName, CurrentRagdollData.ComponentSpaceTransforms.Num());
-		//	UE_LOG(LogAnimReplicatedRagdoll, Warning, TEXT("Pose skeleton: %s, bones: %d"), *Output.AnimInstanceProxy->GetSkelMeshComponent()->GetSkeletalMeshAsset()->GetName(), NumBones);
-		//	return;
-		//}
-
 		FReplicatedRagdollData Transforms = AnimDataHandle->GetInterpedRagdollData(Output.AnimInstanceProxy->GetDeltaSeconds(), InterpSpeed);
 		if (Transforms.ComponentSpaceTransforms.Num() == 0)
 		{
 			// if we don't have interped data then just go to the target
 			Transforms = AnimDataHandle->ReadRagdollData();
 		}
+
+		const auto& RequiredBones = Output.AnimInstanceProxy->GetRequiredBones();//.GetCompactPoseIndexFromSkeletonIndex();
 
 		{
 			TArray<FBoneTransform> BoneTransforms;
@@ -123,8 +117,14 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 			for (const TPair<int32, FTransform>& RagdollTransform : Transforms.ComponentSpaceTransforms)
 			{
 				FBoneTransform BoneTransform;
-				BoneTransform.BoneIndex = FCompactPoseBoneIndex(RagdollTransform.Key);
+				BoneTransform.BoneIndex = RequiredBones.GetCompactPoseIndexFromSkeletonIndex(RagdollTransform.Key);
+				if (BoneTransform.BoneIndex == INDEX_NONE)
+				{
+					continue;
+				}
+
 				BoneTransform.Transform = RagdollTransform.Value;
+
 
 				BoneTransforms.Add(BoneTransform);
 			}
@@ -132,7 +132,11 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 			// The thing doesn't like non-sorted bones
 			BoneTransforms.Sort([](const FBoneTransform A, const FBoneTransform B) { return A.BoneIndex < B.BoneIndex; });
 
+			// Because of skeletal mesh lodding, the bone indices in the replicated ragdoll data may not match the bone indices in the pose.
+			// So we need to remap the indices in the replicated ragdoll data to the indices in the pose before we can apply the transforms
+
 			const auto& Pose = Output.Pose.GetPose();
+
 			for (const FBoneTransform& Transform : BoneTransforms)
 			{
 				if (!Pose.IsValidIndex(Transform.BoneIndex))
@@ -146,6 +150,12 @@ void FAnimNode_ReplicatedRagdoll::EvaluateComponentSpace_AnyThread(FComponentSpa
 
 					return;
 				}
+			}
+
+
+			if (BoneTransforms.Num() == 0)
+			{
+				return;
 			}
 
 			Output.Pose.LocalBlendCSBoneTransforms(BoneTransforms, 1.0f);
@@ -227,3 +237,5 @@ void FAnimNode_ReplicatedRagdoll::CheckForSimulatedBones(const UAnimInstance* In
 #endif
 
 #undef LOCTEXT_NAMESPACE
+
+UE_ENABLE_OPTIMIZATION
