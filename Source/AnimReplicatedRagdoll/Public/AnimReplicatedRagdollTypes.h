@@ -14,14 +14,16 @@ struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollData
 {
 	GENERATED_BODY()
 
-	UPROPERTY(NotReplicated, BlueprintReadWrite, VisibleInstanceOnly)
+	UPROPERTY(NotReplicated, BlueprintReadOnly, VisibleInstanceOnly)
 	TMap<int32, FTransform> ComponentSpaceTransforms;
+
+	UPROPERTY(NotReplicated, Transient)
+	int64 ReplicationKey = 0;
 
 	void CapturePose(const USkeletalMeshComponent* SkeletalMesh);
 	void ApplyPose(USkeletalMeshComponent* SkeletalMesh);
 
 	bool NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms);
-	bool NetDeltaSerialize(UReplicatedRagdollComponent* RagdollComponent, INetDeltaBaseState* OldState, TSharedPtr<INetDeltaBaseState>* NewState, TArray<uint8>& OutData) const;
 
 	bool Serialize(FArchive& Ar)
 	{
@@ -44,10 +46,7 @@ struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollData
 
 	struct FGatherBonesParams
 	{
-		/** Pointer to the previous base state. Used when writing. */
-		INetDeltaBaseState* OldState = nullptr;
-
-		/** SharedPtr to new base state created by NetDeltaSerialize. Used when writing.*/
+		const INetDeltaBaseState* OldState = nullptr;
 		TSharedPtr<INetDeltaBaseState>* NewState = nullptr;
 
 		const FTransform SkeletalMeshTransform;
@@ -62,6 +61,7 @@ struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollData
 
 	static void GatherBones(const FGatherBonesParams& Params);
 	static void SerializeBones(TMap<uint32, FVector>& Locations, TMap<uint32, FQuat>& Rotations, TArray<uint32>& DeletedBones, FArchive& Archive, FReplicatedRagdollNetHeader& Header);
+	static void TrackReplicationStats(const FReplicatedRagdollNetHeader& Header, const TMap<uint32, FVector>& BoneLocations, const TMap<uint32, FQuat>& BoneRotations, bool bWriting);
 };
 
 // The size of the unsigned integer for bone indicies.

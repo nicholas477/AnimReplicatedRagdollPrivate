@@ -8,6 +8,7 @@
 #include "AnimNode_ReplicatedRagdoll.h"
 #include "Engine/ActorChannel.h"
 #include "ReplicatedRagdollNetState.h"
+#include "AnimReplicatedRagdollStats.h"
 
 #if WITH_EDITOR
 #include "UObject/Script.h"
@@ -199,9 +200,24 @@ bool UReplicatedRagdollComponent::ShouldCaptureRagdoll_Implementation()
 	return true;
 }
 
-const UReplicatedRagdollComponent::FSerializedAnimData* UReplicatedRagdollComponent::GetSerializedAnimData(const UNetConnection* Connection) const
+bool UReplicatedRagdollComponent::GetSerializedAnimData(const UNetConnection* Connection, UReplicatedRagdollComponent::FSerializedAnimData& OutAnimData) const
 {
-	return SerializedAnimData.Find(Connection);
+	check(IsInGameThread());
+
+	if (!SerializedAnimData.IsValid())
+	{
+		return false;
+	}
+
+	{
+		FRWScopeLock Lock(SerializedAnimData->Lock, SLT_ReadOnly);
+		if (FSerializedAnimData* Data = SerializedAnimData->Map.Find(Connection))
+		{
+			OutAnimData = *Data;
+			return true;
+		}
+	}
+	return false;
 }
 
 void UReplicatedRagdollComponent::OnRep_AnimData()
@@ -375,6 +391,8 @@ void UReplicatedRagdollComponent::CheckRequirements() const
 
 void UReplicatedRagdollComponent::KickoffAnimDataSerialization()
 {
+	check(IsInGameThread());
+
 	AActor* Owner = GetOwner();
 	if (Owner == nullptr)
 		return;
@@ -395,49 +413,81 @@ void UReplicatedRagdollComponent::KickoffAnimDataSerialization()
 		return;
 
 	const TArray<int32> BonesToReplicate = ReplicationOptions.GetBonesToReplicate(SkeletalMesh);
+	const FTransform SkeletalMeshTransform = SkeletalMesh->GetComponentTransform();
+
+	if (!SerializedAnimData.IsValid())
+	{
+		SerializedAnimData = MakeShared<FSerializedAnimDataMap>();
+	}
 
 	for (UNetConnection* Connection : NetDriver->ClientConnections)
 	{
-		TSharedPtr<FReplicatedRagdollNetState> OldState = nullptr;
-		if (FSerializedAnimData* Data = SerializedAnimData.Find(Connection))
+		TSharedPtr<const FReplicatedRagdollNetState> OldState = nullptr;
+		if (TSharedPtr<FReplicatedRagdollNetState>* OldNetState = NetState.Find(Connection))
 		{
-			OldState = Data->OldNetState;
+			OldState = *OldNetState;
 		}
-		TSharedPtr<INetDeltaBaseState> NewState = nullptr;
 
-		FBitWriter Ar(2048 * 8, true);
+		INC_DWORD_STAT(STAT_RagdollMultithreadedEncodeTasks);
+		AsyncTask(ENamedThreads::AnyNormalThreadHiPriTask, 
+			[SerializedAnimData = this->SerializedAnimData
+			, AnimData = this->AnimData
+			, ReplicationOptions = this->ReplicationOptions
+			, Connection
+			, OldState
+			, SkeletalMeshTransform
+			, BonesToReplicate]()
+		{
+			SCOPED_NAMED_EVENT(ReplicatedRagdollComponent_NetworkEncode, FColor::Orange);
 
-		FReplicatedRagdollNetHeader Header;
-		TMap<uint32, FVector> BoneLocations;
-		TMap<uint32, FQuat> BoneRotations;
-		TArray<uint32> DeletedBones;
+			TSharedPtr<INetDeltaBaseState> NewState = nullptr;
 
-		Header.BoneIndexFormat = AnimData.GetMaxBoneIndex() < 256 ? static_cast<uint8>(EBoneIndexFormat::Byte) : static_cast<uint8>(EBoneIndexFormat::Short);
-		Header.LocationQuantizationLevel = static_cast<uint8>(ReplicationOptions.LocationQuantizationLevel);
-		Header.RotationQuantizationLevel = static_cast<uint8>(ReplicationOptions.RotationQuantizationLevel);
-		Header.bBonesInWorldSpace = ReplicationOptions.bReplicateBonesInWorldSpace;
+			FBitWriter Ar(2048 * 8, true);
 
-		FReplicatedRagdollData::GatherBones(FReplicatedRagdollData::FGatherBonesParams{
-			OldState.Get(),
-			&NewState,
-			SkeletalMesh->GetComponentTransform(),
-			AnimData.ComponentSpaceTransforms,
-			BoneLocations,
-			BoneRotations,
-			DeletedBones,
-			Header,
-			BonesToReplicate,
-			ReplicationOptions
+			FReplicatedRagdollNetHeader Header;
+			TMap<uint32, FVector> BoneLocations;
+			TMap<uint32, FQuat> BoneRotations;
+			TArray<uint32> DeletedBones;
+
+			Header.BoneIndexFormat = AnimData.GetMaxBoneIndex() < 256 ? static_cast<uint8>(EBoneIndexFormat::Byte) : static_cast<uint8>(EBoneIndexFormat::Short);
+			Header.LocationQuantizationLevel = static_cast<uint8>(ReplicationOptions.LocationQuantizationLevel);
+			Header.RotationQuantizationLevel = static_cast<uint8>(ReplicationOptions.RotationQuantizationLevel);
+			Header.bBonesInWorldSpace = ReplicationOptions.bReplicateBonesInWorldSpace;
+
+			{
+				FReplicatedRagdollData::GatherBones(FReplicatedRagdollData::FGatherBonesParams{
+					OldState.Get(),
+					&NewState,
+					SkeletalMeshTransform,
+					AnimData.ComponentSpaceTransforms,
+					BoneLocations,
+					BoneRotations,
+					DeletedBones,
+					Header,
+					BonesToReplicate,
+					ReplicationOptions
+				});
+			}
+
+			FReplicatedRagdollData::TrackReplicationStats(Header, BoneLocations, BoneRotations, true);
+
+			Ar.Serialize(&Header, sizeof(Header));
+
+			{
+				FReplicatedRagdollData::SerializeBones(BoneLocations, BoneRotations, DeletedBones, Ar, Header);
+			}
+
+			TSharedPtr<TArray<uint8>> Bytes = MakeShared<TArray<uint8>>(Ar.GetData(), Ar.GetNumBytes());
+			FMemory::Memcpy(Bytes->GetData(), Ar.GetData(), Ar.GetNumBytes());
+
+			FRWScopeLock Lock(SerializedAnimData->Lock, SLT_Write);
+			SerializedAnimData->Map.Add(Connection, FSerializedAnimData{
+				StaticCastSharedPtr<FReplicatedRagdollNetState>(NewState),
+				Bytes,
+				Ar.GetNumBits(),
+				AnimData.ReplicationKey
+			});
 		});
-
-		Ar.Serialize(&Header, sizeof(Header));
-
-		FReplicatedRagdollData::SerializeBones(BoneLocations, BoneRotations, DeletedBones, Ar, Header);
-
-		TArray<uint8> Bytes = *Ar.GetBuffer();
-		Bytes.SetNum(Ar.GetNumBytes());
-
-		SerializedAnimData.Add(Connection, FSerializedAnimData{ StaticCastSharedPtr<FReplicatedRagdollNetState>(OldState), StaticCastSharedPtr<FReplicatedRagdollNetState>(NewState), Bytes, Ar.GetNumBits() });
 	}
 }
 

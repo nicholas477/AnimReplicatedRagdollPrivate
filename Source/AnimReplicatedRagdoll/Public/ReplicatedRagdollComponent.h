@@ -112,12 +112,16 @@ public:
 
 	struct FSerializedAnimData
 	{
-		mutable TSharedPtr<FReplicatedRagdollNetState> OldNetState;
 		TSharedPtr<FReplicatedRagdollNetState> NewNetState;
-		mutable TArray<uint8> SerializedData;
-		mutable int64 NumBitsWritten;
+		TSharedPtr<TArray<uint8>> SerializedData;
+		int64 NumBitsWritten;
+		int64 ReplicationKey = -1;
 	};
-	const FSerializedAnimData* GetSerializedAnimData(const UNetConnection* Connection) const;
+	bool GetSerializedAnimData(const UNetConnection* Connection, FSerializedAnimData& OutAnimData) const;
+	void UpdateNetState(const UNetConnection* Connection, TSharedPtr<FReplicatedRagdollNetState> NewState) const
+	{
+		NetState.Add(Connection, NewState);
+	}
 
 protected:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category = "Ragdoll", ReplicatedUsing=OnRep_AnimData)
@@ -143,5 +147,12 @@ protected:
 #endif
 
 	void KickoffAnimDataSerialization();
-	TMap<UNetConnection*, FSerializedAnimData> SerializedAnimData;
+	mutable TMap<const UNetConnection*, TSharedPtr<FReplicatedRagdollNetState>> NetState;
+
+	struct FSerializedAnimDataMap
+	{
+		mutable FRWLock Lock;
+		TMap<const UNetConnection*, FSerializedAnimData> Map;
+	};
+	TSharedPtr<FSerializedAnimDataMap> SerializedAnimData;
 };

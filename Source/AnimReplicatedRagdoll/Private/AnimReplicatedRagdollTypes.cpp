@@ -22,6 +22,8 @@ void FReplicatedRagdollData::CapturePose(const USkeletalMeshComponent* SkeletalM
 	{
 		ComponentSpaceTransforms.Add(i, BoneTransforms[i]);
 	}
+
+	ReplicationKey++;
 }
 
 void FReplicatedRagdollData::ApplyPose(USkeletalMeshComponent* SkeletalMesh)
@@ -37,6 +39,8 @@ void FReplicatedRagdollData::ApplyPose(USkeletalMeshComponent* SkeletalMesh)
 		}
 	}
 	((URRSkeletalMeshComponent*)SkeletalMesh)->ApplyEditedComponentSpaceTransforms();
+
+	ReplicationKey++;
 }
 
 static_assert(sizeof(FReplicatedRagdollNetHeader) == 1, "FReplicatedRagdollNetHeader should be 1 byte across all platforms");
@@ -78,6 +82,8 @@ static bool ShouldReplicateBone(const USkeletalMeshComponent* SkeletalMesh, int3
 
 void FReplicatedRagdollData::SerializeBones(TMap<uint32, FVector>& Locations, TMap<uint32, FQuat>& Rotations, TArray<uint32>& DeletedBones, FArchive& Archive, FReplicatedRagdollNetHeader& Header)
 {
+	SCOPED_NAMED_EVENT(ReplicatedRagdollComponent_NetworkEncode_SerializeBones, FColor::Orange);
+
 	const size_t BoneIndexSize = Header.GetBoneIndexFormatSize();
 	uint32 NumLocationUpdates = Locations.Num();
 	uint32 NumRotationUpdates = Rotations.Num();
@@ -142,7 +148,8 @@ void FReplicatedRagdollData::SerializeBones(TMap<uint32, FVector>& Locations, TM
 
 void FReplicatedRagdollData::GatherBones(const FReplicatedRagdollData::FGatherBonesParams& Params)
 {
-	FReplicatedRagdollNetState* OldState = static_cast<FReplicatedRagdollNetState*>(Params.OldState);
+	SCOPED_NAMED_EVENT(ReplicatedRagdollComponent_NetworkEncode_GatherBones, FColor::Orange);
+	const FReplicatedRagdollNetState* OldState = static_cast<const FReplicatedRagdollNetState*>(Params.OldState);
 
 	TSharedPtr<FReplicatedRagdollNetState> NewState = nullptr;
 	if (OldState)
@@ -209,41 +216,76 @@ void FReplicatedRagdollData::GatherBones(const FReplicatedRagdollData::FGatherBo
 	}
 }
 
-static void TrackReplicationStats(const FReplicatedRagdollNetHeader& Header, const TMap<uint32, FVector>& BoneLocations, const TMap<uint32, FQuat>& BoneRotations)
+void FReplicatedRagdollData::TrackReplicationStats(const FReplicatedRagdollNetHeader& Header, const TMap<uint32, FVector>& BoneLocations, const TMap<uint32, FQuat>& BoneRotations, bool bWriting)
 {
-	// Track location stats based on quantization level
-	switch (static_cast<EVectorQuantization>(Header.LocationQuantizationLevel))
+	if (bWriting)
 	{
+		// Track location stats based on quantization level
+		switch (static_cast<EVectorQuantization>(Header.LocationQuantizationLevel))
+		{
 		case EVectorQuantization::RoundWholeNumber:
-			INC_DWORD_STAT_BY(STAT_RagdollBoneLocations_RoundWholeNumber, BoneLocations.Num());
+			INC_DWORD_STAT_BY(STAT_Encoding_RagdollBoneLocations_RoundWholeNumber, BoneLocations.Num());
 			break;
 		case EVectorQuantization::RoundOneDecimal:
-			INC_DWORD_STAT_BY(STAT_RagdollBoneLocations_RoundOneDecimal, BoneLocations.Num());
+			INC_DWORD_STAT_BY(STAT_Encoding_RagdollBoneLocations_RoundOneDecimal, BoneLocations.Num());
 			break;
 		case EVectorQuantization::RoundTwoDecimals:
-			INC_DWORD_STAT_BY(STAT_RagdollBoneLocations_RoundTwoDecimals, BoneLocations.Num());
+			INC_DWORD_STAT_BY(STAT_Encoding_RagdollBoneLocations_RoundTwoDecimals, BoneLocations.Num());
 			break;
 		default:
 			break;
-	}
+		}
 
-	// Track rotation stats based on quantization level
-	switch (static_cast<ERotatorQuantization>(Header.RotationQuantizationLevel))
-	{
+		// Track rotation stats based on quantization level
+		switch (static_cast<ERotatorQuantization>(Header.RotationQuantizationLevel))
+		{
 		case ERotatorQuantization::ByteComponents:
-			INC_DWORD_STAT_BY(STAT_RagdollBoneRotations_ByteComponents, BoneRotations.Num());
+			INC_DWORD_STAT_BY(STAT_Encoding_RagdollBoneRotations_ByteComponents, BoneRotations.Num());
 			break;
 		case ERotatorQuantization::ShortComponents:
-			INC_DWORD_STAT_BY(STAT_RagdollBoneRotations_ShortComponents, BoneRotations.Num());
+			INC_DWORD_STAT_BY(STAT_Encoding_RagdollBoneRotations_ShortComponents, BoneRotations.Num());
 			break;
 		default:
 			break;
+		}
+	}
+	else
+	{
+		// Track location stats based on quantization level
+		switch (static_cast<EVectorQuantization>(Header.LocationQuantizationLevel))
+		{
+		case EVectorQuantization::RoundWholeNumber:
+			INC_DWORD_STAT_BY(STAT_Decoding_RagdollBoneLocations_RoundWholeNumber, BoneLocations.Num());
+			break;
+		case EVectorQuantization::RoundOneDecimal:
+			INC_DWORD_STAT_BY(STAT_Decoding_RagdollBoneLocations_RoundOneDecimal, BoneLocations.Num());
+			break;
+		case EVectorQuantization::RoundTwoDecimals:
+			INC_DWORD_STAT_BY(STAT_Decoding_RagdollBoneLocations_RoundTwoDecimals, BoneLocations.Num());
+			break;
+		default:
+			break;
+		}
+
+		// Track rotation stats based on quantization level
+		switch (static_cast<ERotatorQuantization>(Header.RotationQuantizationLevel))
+		{
+		case ERotatorQuantization::ByteComponents:
+			INC_DWORD_STAT_BY(STAT_Decoding_RagdollBoneRotations_ByteComponents, BoneRotations.Num());
+			break;
+		case ERotatorQuantization::ShortComponents:
+			INC_DWORD_STAT_BY(STAT_Decoding_RagdollBoneRotations_ShortComponents, BoneRotations.Num());
+			break;
+		default:
+			break;
+		}
 	}
 }
 
 bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParms)
 {
-	SCOPED_NAMED_EVENT(FReplicatedRagdollData_NetDeltaSerialize, FColor::Magenta);
+	const FString ReadingWriting = DeltaParms.Reader ? TEXT("Decoding") : (DeltaParms.Writer ? TEXT("Encoding") : TEXT("Unknown"));
+	SCOPED_NAMED_EVENT_FSTRING(FString::Printf(TEXT("FReplicatedRagdollData_NetDeltaSerialize_%s"), *ReadingWriting), FColor::Magenta);
 
 	FBitArchive* Archive = DeltaParms.Reader ? static_cast<FBitArchive*>(DeltaParms.Reader) : static_cast<FBitArchive*>(DeltaParms.Writer);
 	if (Archive == nullptr)
@@ -262,19 +304,17 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 		if (Archive->IsSaving())
 		{
 			// Fast path, skip serialization if we have already serialized the data for this connection
-			if (const UReplicatedRagdollComponent::FSerializedAnimData* SerializedData = RagdollComponent->GetSerializedAnimData(DeltaParms.Connection))
+			UReplicatedRagdollComponent::FSerializedAnimData SerializedData;
+			if (RagdollComponent->GetSerializedAnimData(DeltaParms.Connection, SerializedData))
 			{
-				const FString S = RagdollComponent->GetWorld()->GetNetMode() == ENetMode::NM_Client ? "Client" : "Server";
+				if (SerializedData.ReplicationKey == ReplicationKey)
+				{
+					RagdollComponent->UpdateNetState(DeltaParms.Connection, SerializedData.NewNetState);
+					*DeltaParms.NewState = SerializedData.NewNetState;
 
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Green, FString::Printf(TEXT("(%s) Fastpathing ragdoll component replication!"), *S));
-				SerializedData->OldNetState = MakeShared<FReplicatedRagdollNetState>(*(FReplicatedRagdollNetState*)(DeltaParms.OldState));
-				*DeltaParms.NewState = SerializedData->NewNetState;
-				Archive->SerializeBits(SerializedData->SerializedData.GetData(), SerializedData->NumBitsWritten);
-				return true;
-			}
-			else
-			{
-				GEngine->AddOnScreenDebugMessage(-1, 0.f, FColor::Red, "Slow path ragdoll component replication....");
+					Archive->SerializeBits(SerializedData.SerializedData->GetData(), SerializedData.NumBitsWritten);
+					return true;
+				}
 			}
 		}
 		SkeletalMesh = RagdollComponent->GetSkeletalMesh();
@@ -312,7 +352,7 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 			ReplicationOptions
 		});
 
-		TrackReplicationStats(Header, BoneLocations, BoneRotations);
+		TrackReplicationStats(Header, BoneLocations, BoneRotations, true);
 	}
 
 	Archive->Serialize(&Header, sizeof(Header));
@@ -349,22 +389,12 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 			FTransform& Transform = ComponentSpaceTransforms.FindOrAdd(BoneRotation.Key);
 			Transform.SetRotation(Rotation.Quaternion());
 		}
+
+		TrackReplicationStats(Header, BoneLocations, BoneRotations, false);
 	}
 
 	return true;
 }
-
-//bool FReplicatedRagdollData::NetDeltaSerialize(UReplicatedRagdollComponent* RagdollComponent, INetDeltaBaseState* OldState, TSharedPtr<INetDeltaBaseState>* NewState, TArray<uint8>& OutData) const
-//{
-//	//FReplicatedRagdollNetHeader Header;
-//	//TMap<uint32, FVector> BoneLocations;
-//	//TMap<uint32, FQuat> BoneRotations;
-//	//TArray<uint32> DeletedBones;
-//
-//	//const USkeletalMeshComponent* SkeletalMesh = nullptr;
-//
-//	return false;
-//}
 
 UE_ENABLE_OPTIMIZATION
 
