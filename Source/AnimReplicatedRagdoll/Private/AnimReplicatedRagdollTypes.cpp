@@ -84,14 +84,18 @@ void FReplicatedRagdollData::SerializeBones(TMap<uint32, FVector>& Locations, TM
 {
 	SCOPED_NAMED_EVENT(ReplicatedRagdollComponent_NetworkEncode_SerializeBones, FColor::Orange);
 
-	const size_t BoneIndexSize = Header.GetBoneIndexFormatSize();
+	const size_t BoneIndexBitSize = Header.GetNumBitsForBoneIndex();
 	uint32 NumLocationUpdates = Locations.Num();
 	uint32 NumRotationUpdates = Rotations.Num();
 	uint32 NumBonesDeleted = DeletedBones.Num();
 
-	Archive.Serialize((void*)&NumLocationUpdates, BoneIndexSize);
-	Archive.Serialize((void*)&NumRotationUpdates, BoneIndexSize);
-	Archive.Serialize((void*)&NumBonesDeleted, BoneIndexSize);
+	Header.CheckNumBitsSufficientForNum(NumLocationUpdates);
+	Header.CheckNumBitsSufficientForNum(NumRotationUpdates);
+	/*Header.CheckNumBitsSufficientForNum(NumBonesDeleted);*/
+
+	Archive.SerializeBits((void*)&NumLocationUpdates, BoneIndexBitSize);
+	Archive.SerializeBits((void*)&NumRotationUpdates, BoneIndexBitSize);
+	Archive.Serialize((void*)&NumBonesDeleted, 2);
 
 	if (Archive.IsLoading())
 	{
@@ -99,7 +103,7 @@ void FReplicatedRagdollData::SerializeBones(TMap<uint32, FVector>& Locations, TM
 		{
 			uint32 BoneIndex = 0;
 			FVector Location;
-			Archive.Serialize((void*)&BoneIndex, BoneIndexSize);
+			Archive.SerializeBits((void*)&BoneIndex, BoneIndexBitSize);
 			AnimReplicatedRagdollHelpers::ReadAndDequantizeLocation(Archive, Location, Header.GetLocationQuantization());
 
 			Locations.Add(BoneIndex, Location);
@@ -109,7 +113,7 @@ void FReplicatedRagdollData::SerializeBones(TMap<uint32, FVector>& Locations, TM
 		{
 			uint32 BoneIndex = 0;
 			FRotator Rotation;
-			Archive.Serialize((void*)&BoneIndex, BoneIndexSize);
+			Archive.SerializeBits((void*)&BoneIndex, BoneIndexBitSize);
 			AnimReplicatedRagdollHelpers::ReadAndDequantizeRotation(Archive, Rotation, Header.GetRotationQuantization());
 			Rotations.Add(BoneIndex, Rotation.Quaternion());
 		}
@@ -117,7 +121,7 @@ void FReplicatedRagdollData::SerializeBones(TMap<uint32, FVector>& Locations, TM
 		for (uint32 i = 0; i < NumBonesDeleted; ++i)
 		{
 			uint32 BoneIndex = 0;
-			Archive.Serialize((void*)&BoneIndex, BoneIndexSize);
+			Archive.SerializeBits((void*)&BoneIndex, BoneIndexBitSize);
 			DeletedBones.Add(BoneIndex);
 		}
 	}
@@ -125,19 +129,19 @@ void FReplicatedRagdollData::SerializeBones(TMap<uint32, FVector>& Locations, TM
 	{
 		for (const TPair<uint32, FVector>& Pair : Locations)
 		{
-			Archive.Serialize((void*)&Pair.Key, BoneIndexSize);
+			Archive.SerializeBits((void*)&Pair.Key, BoneIndexBitSize);
 			AnimReplicatedRagdollHelpers::QuantizeAndWriteLocation(Archive, Pair.Value, Header.GetLocationQuantization());
 		}
 
 		for (const TPair<uint32, FQuat>& Pair : Rotations)
 		{
-			Archive.Serialize((void*)&Pair.Key, BoneIndexSize);
+			Archive.SerializeBits((void*)&Pair.Key, BoneIndexBitSize);
 			AnimReplicatedRagdollHelpers::QuantizeAndWriteRotation(Archive, Pair.Value.Rotator(), Header.GetRotationQuantization());
 		}
 
 		for (uint32 i = 0; i < NumBonesDeleted; ++i)
 		{
-			Archive.Serialize((void*)&DeletedBones[i], BoneIndexSize);
+			Archive.SerializeBits((void*)&DeletedBones[i], BoneIndexBitSize);
 		}
 	}
 	else
@@ -163,8 +167,8 @@ void FReplicatedRagdollData::GatherBones(const FReplicatedRagdollData::FGatherBo
 	}
 	*Params.NewState = NewState;
 
-	const EVectorQuantization LocationQuantization = static_cast<EVectorQuantization>(Params.Header.LocationQuantizationLevel);
-	const ERotatorQuantization RotationQuantization = static_cast<ERotatorQuantization>(Params.Header.RotationQuantizationLevel);
+	const EVectorQuantization LocationQuantization = Params.Header.GetLocationQuantization();
+	const ERotatorQuantization RotationQuantization = Params.Header.GetRotationQuantization();
 	
 	if (OldState)
 	{
@@ -192,7 +196,7 @@ void FReplicatedRagdollData::GatherBones(const FReplicatedRagdollData::FGatherBo
 			|| OldState->ShouldUpdateBoneLocation(RagdollTransform.Key, RagdollTransform.Value.GetLocation(), LocationQuantization))
 		{
 			FVector Location = RagdollTransform.Value.GetLocation();
-			if (Params.Header.bBonesInWorldSpace)
+			if (Params.Header.GetBonesInWorldSpace())
 			{
 				Location = Params.SkeletalMeshTransform.TransformPositionNoScale(Location);
 			}
@@ -205,7 +209,7 @@ void FReplicatedRagdollData::GatherBones(const FReplicatedRagdollData::FGatherBo
 			|| OldState->ShouldUpdateBoneRotation(RagdollTransform.Key, RagdollTransform.Value.GetRotation().Rotator(), RotationQuantization))
 		{
 			FRotator Rotation = RagdollTransform.Value.GetRotation().Rotator();
-			if (Params.Header.bBonesInWorldSpace)
+			if (Params.Header.GetBonesInWorldSpace())
 			{
 				Rotation = Params.SkeletalMeshTransform.TransformRotation(Rotation.Quaternion()).Rotator();
 			}
@@ -221,7 +225,7 @@ void FReplicatedRagdollData::TrackReplicationStats(const FReplicatedRagdollNetHe
 	if (bWriting)
 	{
 		// Track location stats based on quantization level
-		switch (static_cast<EVectorQuantization>(Header.LocationQuantizationLevel))
+		switch (Header.GetLocationQuantization())
 		{
 		case EVectorQuantization::RoundWholeNumber:
 			INC_DWORD_STAT_BY(STAT_Encoding_RagdollBoneLocations_RoundWholeNumber, BoneLocations.Num());
@@ -237,7 +241,7 @@ void FReplicatedRagdollData::TrackReplicationStats(const FReplicatedRagdollNetHe
 		}
 
 		// Track rotation stats based on quantization level
-		switch (static_cast<ERotatorQuantization>(Header.RotationQuantizationLevel))
+		switch (Header.GetRotationQuantization())
 		{
 		case ERotatorQuantization::ByteComponents:
 			INC_DWORD_STAT_BY(STAT_Encoding_RagdollBoneRotations_ByteComponents, BoneRotations.Num());
@@ -252,7 +256,7 @@ void FReplicatedRagdollData::TrackReplicationStats(const FReplicatedRagdollNetHe
 	else
 	{
 		// Track location stats based on quantization level
-		switch (static_cast<EVectorQuantization>(Header.LocationQuantizationLevel))
+		switch (Header.GetLocationQuantization())
 		{
 		case EVectorQuantization::RoundWholeNumber:
 			INC_DWORD_STAT_BY(STAT_Decoding_RagdollBoneLocations_RoundWholeNumber, BoneLocations.Num());
@@ -268,7 +272,7 @@ void FReplicatedRagdollData::TrackReplicationStats(const FReplicatedRagdollNetHe
 		}
 
 		// Track rotation stats based on quantization level
-		switch (static_cast<ERotatorQuantization>(Header.RotationQuantizationLevel))
+		switch (Header.GetRotationQuantization())
 		{
 		case ERotatorQuantization::ByteComponents:
 			INC_DWORD_STAT_BY(STAT_Decoding_RagdollBoneRotations_ByteComponents, BoneRotations.Num());
@@ -333,10 +337,10 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 		{
 			ReplicationOptions = RagdollComponent->GetReplicationOptions();
 		}
-		Header.BoneIndexFormat = GetMaxBoneIndex() < 256 ? static_cast<uint8>(EBoneIndexFormat::Byte) : static_cast<uint8>(EBoneIndexFormat::Short);
-		Header.LocationQuantizationLevel = static_cast<uint8>(ReplicationOptions.LocationQuantizationLevel);
-		Header.RotationQuantizationLevel = static_cast<uint8>(ReplicationOptions.RotationQuantizationLevel);
-		Header.bBonesInWorldSpace = ReplicationOptions.bReplicateBonesInWorldSpace;
+		Header.SetNumBitsForBoneIndex(GetMaxBoneIndex());
+		Header.SetLocationQuantization(ReplicationOptions.LocationQuantizationLevel);
+		Header.SetRotationQuantization(ReplicationOptions.RotationQuantizationLevel);
+		Header.SetBonesInWorldSpace(ReplicationOptions.bReplicateBonesInWorldSpace);
 
 		const TArray<int32> AllowedBones = ReplicationOptions.GetBonesToReplicate(SkeletalMesh);
 		GatherBones(FGatherBonesParams{
@@ -369,7 +373,7 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 		for (const TPair<uint32, FVector>& BoneLocation : BoneLocations)
 		{
 			FVector Location = BoneLocation.Value;
-			if (Header.bBonesInWorldSpace && SkeletalMesh)
+			if (Header.GetBonesInWorldSpace() && SkeletalMesh)
 			{
 				Location = SkeletalMesh->GetComponentTransform().InverseTransformPositionNoScale(Location);
 			}
@@ -381,7 +385,7 @@ bool FReplicatedRagdollData::NetDeltaSerialize(FNetDeltaSerializeInfo& DeltaParm
 		for (const TPair<uint32, FQuat>& BoneRotation : BoneRotations)
 		{
 			FRotator Rotation = BoneRotation.Value.Rotator();
-			if (Header.bBonesInWorldSpace && SkeletalMesh)
+			if (Header.GetBonesInWorldSpace() && SkeletalMesh)
 			{
 				Rotation = SkeletalMesh->GetComponentTransform().InverseTransformRotation(Rotation.Quaternion()).Rotator();
 			}

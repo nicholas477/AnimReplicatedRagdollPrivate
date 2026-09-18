@@ -156,16 +156,22 @@ struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollOptions
 	TArray<int32> GetBonesToReplicate(const USkeletalMeshComponent* SkeletalMesh) const;
 };
 
+UE_DISABLE_OPTIMIZATION
 struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollNetHeader
 {
-	uint8 BoneIndexFormat : 1;
-	uint8 LocationQuantizationLevel : 2;
-	uint8 RotationQuantizationLevel : 2;
-	uint8 bBonesInWorldSpace : 1;
+	void SetLocationQuantization(EVectorQuantization QuantizationLevel)
+	{
+		LocationQuantizationLevel = static_cast<uint8>(QuantizationLevel);
+	}
 
 	EVectorQuantization GetLocationQuantization() const
 	{
 		return static_cast<EVectorQuantization>(LocationQuantizationLevel);
+	}
+
+	void SetRotationQuantization(ERotatorQuantization QuantizationLevel)
+	{
+		RotationQuantizationLevel = static_cast<uint8>(QuantizationLevel);
 	}
 
 	ERotatorQuantization GetRotationQuantization() const
@@ -173,16 +179,41 @@ struct ANIMREPLICATEDRAGDOLL_API FReplicatedRagdollNetHeader
 		return static_cast<ERotatorQuantization>(RotationQuantizationLevel);
 	}
 
-	uint32 GetBoneIndexFormatSize() const
+	void SetNumBitsForBoneIndex(int32 MaxIndex)
 	{
-		switch (BoneIndexFormat)
-		{
-		case static_cast<uint8>(EBoneIndexFormat::Byte):
-			return sizeof(uint8);
-		case static_cast<uint8>(EBoneIndexFormat::Short):
-			return sizeof(uint16);
-		default:
-			return 0;
-		}
+		MaxIndex = FMath::Max(MaxIndex, 0);
+		const uint32 NumBits = FMath::CeilLogTwo(MaxIndex + 1) >> 1;
+		BoneIndexNumBits = NumBits;
+
+		CheckNumBitsSufficientForNum(MaxIndex);
 	}
+
+	void CheckNumBitsSufficientForNum(int32 Number) const
+	{
+		const uint64 MaxNumber = (1 << GetNumBitsForBoneIndex()) - 1;
+		check(Number <= MaxNumber);
+	}
+
+	uint8 GetNumBitsForBoneIndex() const
+	{
+		return (BoneIndexNumBits << 1) | 1;
+	}
+
+	void SetBonesInWorldSpace(bool bInWorldSpace)
+	{
+		bBonesInWorldSpace = bInWorldSpace ? 1 : 0;
+	}
+
+	bool GetBonesInWorldSpace() const
+	{
+		return bBonesInWorldSpace != 0;
+	}
+
+protected:
+	// Number of bits needed for a bone index, right shifted one.
+	uint8 BoneIndexNumBits : 4;
+	uint8 LocationQuantizationLevel : 2;
+	uint8 RotationQuantizationLevel : 1;
+	uint8 bBonesInWorldSpace : 1;
 };
+UE_ENABLE_OPTIMIZATION

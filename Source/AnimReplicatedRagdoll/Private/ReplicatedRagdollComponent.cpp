@@ -18,6 +18,8 @@
 #include "Logging/MessageLog.h"
 #include "Misc/UObjectToken.h"
 #include "AnimReplicatedRagdollSettings.h"
+#include "Engine/SimpleConstructionScript.h"
+#include "Engine/SCS_Node.h"
 #endif
 
 #define LOCTEXT_NAMESPACE "ReplicatedRagdollComponent"
@@ -122,7 +124,61 @@ USkeletalMeshComponent* UReplicatedRagdollComponent::GetSkeletalMesh() const
 	}
 #endif
 
-	return Cast<USkeletalMeshComponent>(GetAttachParent());
+	if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(GetAttachParent()))
+	{
+		return SkeletalMesh;
+	}
+	
+	AActor* Owner = GetOwner();
+
+	if (!Owner)
+	{
+		Owner = GetTypedOuter<AActor>();
+	}
+
+#if WITH_EDITOR
+	if (!Owner)
+	{
+		UBlueprintGeneratedClass* GeneratedClass = GetTypedOuter<UBlueprintGeneratedClass>();
+		if (GeneratedClass)
+		{
+			// Iterate through the Simple Construction Script nodes of the Blueprint Generated Class
+			if (USimpleConstructionScript* SCS = GeneratedClass->SimpleConstructionScript)
+			{
+				for (USCS_Node* SCSNode : SCS->GetAllNodes())
+				{
+					if (SCSNode)
+					{
+						// Find the parent component template of this specific SCS node
+						if (USkeletalMeshComponent* SkelMesh = Cast<USkeletalMeshComponent>(SCSNode->GetParentComponentTemplate(GeneratedClass)))
+						{
+							if (SCSNode->ComponentTemplate == this)
+							{
+								return SkelMesh;
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+#endif
+
+	if (Owner)
+	{
+		for (UActorComponent* Component : Owner->GetComponents())
+		{
+			if (USkeletalMeshComponent* SkeletalMesh = Cast<USkeletalMeshComponent>(Component))
+			{
+				if (SkeletalMesh->GetAttachChildren().Contains(this))
+				{
+					return SkeletalMesh;
+				}
+			}
+		}
+	}
+
+	return nullptr;
 }
 
 void UReplicatedRagdollComponent::ClearRagdoll()
@@ -412,6 +468,8 @@ void UReplicatedRagdollComponent::KickoffAnimDataSerialization()
 	if (!NetDriver)
 		return;
 
+	SCOPED_NAMED_EVENT(ReplicatedRagdollComponent_KickOffSerialization, FColor::Orange);
+
 	const TArray<int32> BonesToReplicate = ReplicationOptions.GetBonesToReplicate(SkeletalMesh);
 	const FTransform SkeletalMeshTransform = SkeletalMesh->GetComponentTransform();
 
@@ -449,25 +507,35 @@ void UReplicatedRagdollComponent::KickoffAnimDataSerialization()
 			TMap<uint32, FQuat> BoneRotations;
 			TArray<uint32> DeletedBones;
 
-			Header.BoneIndexFormat = AnimData.GetMaxBoneIndex() < 256 ? static_cast<uint8>(EBoneIndexFormat::Byte) : static_cast<uint8>(EBoneIndexFormat::Short);
-			Header.LocationQuantizationLevel = static_cast<uint8>(ReplicationOptions.LocationQuantizationLevel);
-			Header.RotationQuantizationLevel = static_cast<uint8>(ReplicationOptions.RotationQuantizationLevel);
-			Header.bBonesInWorldSpace = ReplicationOptions.bReplicateBonesInWorldSpace;
-
+			auto ComponentSpaceTransforms = AnimData.ComponentSpaceTransforms;
+			for (const TPair<int32, FTransform> Bone : AnimData.ComponentSpaceTransforms)
 			{
-				FReplicatedRagdollData::GatherBones(FReplicatedRagdollData::FGatherBonesParams{
-					OldState.Get(),
-					&NewState,
-					SkeletalMeshTransform,
-					AnimData.ComponentSpaceTransforms,
-					BoneLocations,
-					BoneRotations,
-					DeletedBones,
-					Header,
-					BonesToReplicate,
-					ReplicationOptions
-				});
+				if (!BonesToReplicate.Contains(Bone.Key))
+				{
+					ComponentSpaceTransforms.Remove(Bone.Key);
+				}
 			}
+
+			//Header.SetNumBitsForBoneIndex(AnimData.GetMaxBoneIndex());
+			Header.SetLocationQuantization(ReplicationOptions.LocationQuantizationLevel);
+			Header.SetRotationQuantization(ReplicationOptions.RotationQuantizationLevel);
+			Header.SetBonesInWorldSpace(ReplicationOptions.bReplicateBonesInWorldSpace);
+
+			FReplicatedRagdollData::GatherBones(FReplicatedRagdollData::FGatherBonesParams{
+				OldState.Get(),
+				&NewState,
+				SkeletalMeshTransform,
+				ComponentSpaceTransforms,
+				BoneLocations,
+				BoneRotations,
+				DeletedBones,
+				Header,
+				BonesToReplicate,
+				ReplicationOptions
+			});
+
+			const int32 MaxDeletedBoneIndex = FMath::Max(DeletedBones);
+			Header.SetNumBitsForBoneIndex(FMath::Max(AnimData.GetMaxBoneIndex(), MaxDeletedBoneIndex));
 
 			FReplicatedRagdollData::TrackReplicationStats(Header, BoneLocations, BoneRotations, true);
 
